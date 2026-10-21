@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import re
+import sys
 
 from fastapi import APIRouter, Body, Depends, Request
 from fastapi.responses import JSONResponse
@@ -320,10 +321,56 @@ def diary_list(store=Depends(get_store), date: str = "") -> dict:
     return {"entries": [{"date": r[0], "content": r[1], "mood": r[2]} for r in rows]}
 
 
+class _UploadError(Exception):
+    """上传图片校验失败（message 即返回给端的 error 文案）。"""
+
+
+async def _read_upload_image(request: Request) -> bytes:
+    """读取并校验上传图片（png/jpg ≤5MB），返回字节内容；失败抛 _UploadError。
+
+    图片只在调用方写入系统临时目录即用即删，不落数据目录。"""
+    content_type = (request.headers.get("content-type") or "").lower()
+    if "multipart/form-data" not in content_type:
+        raise _UploadError("请用 multipart/form-data 上传图片字段 file")
+    form = await request.form()
+    up = form.get("file")
+    if up is None or not hasattr(up, "read"):
+        raise _UploadError("缺少图片字段 file")
+    data = await up.read()
+    if not data:
+        raise _UploadError("空文件")
+    if len(data) > 5 * 1024 * 1024:
+        raise _UploadError("图片超过 5MB")
+    name = str(getattr(up, "filename", "") or "").lower()
+    if not name.endswith((".png", ".jpg", ".jpeg")):
+        raise _UploadError("仅支持 png/jpg")
+    return data
+
+
+def _ocr_upload(data: bytes, suffix: str) -> str:
+    """字节落临时文件跑本地 Vision OCR，用完即删；失败抛 _UploadError。"""
+    import os
+    import tempfile
+    from pathlib import Path
+
+    from ..ocr import ocr_image
+
+    tmp = Path(tempfile.mkstemp(suffix=suffix)[1])
+    try:
+        tmp.write_bytes(data)
+        return ocr_image(tmp)
+    except Exception:  # noqa: BLE001 - Vision 崩溃细节不外泄
+        raise _UploadError(f"OCR 失败: {sys.exc_info()[0].__name__}") from None
+    finally:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+
+
 @router.post("/ocr")
 async def mp_ocr(
     request: Request,
-    file: "UploadFile" = None,
     conf=Depends(get_conf),
     store=Depends(get_store),
     trades_path=Depends(get_trades_path),
@@ -332,46 +379,44 @@ async def mp_ocr(
 
     图片只在系统临时目录即用即删；无 GLM Key 时返回 OCR 原文（预览页手动整理）。
     """
-    import os
-    import tempfile
-    from pathlib import Path
+    from ..ocr import parse_trades_by_llm
 
-    from fastapi import File, HTTPException, UploadFile as _U
-
-    content_type = (request.headers.get("content-type") or "").lower()
-    if "multipart/form-data" not in content_type:
-        return JSONResponse({"error": "请用 multipart/form-data 上传图片字段 file"}, status_code=422)
-    form = await request.form()
-    up = form.get("file")
-    if up is None or not hasattr(up, "read"):
-        return JSONResponse({"error": "缺少图片字段 file"}, status_code=422)
-    data = await up.read()
-    if not data:
-        return JSONResponse({"error": "空文件"}, status_code=422)
-    if len(data) > 5 * 1024 * 1024:
-        return JSONResponse({"error": "图片超过 5MB"}, status_code=422)
-    name = str(getattr(up, "filename", "") or "").lower()
-    if not name.endswith((".png", ".jpg", ".jpeg")):
-        return JSONResponse({"error": "仅支持 png/jpg"}, status_code=422)
-
-    from ..ocr import ocr_image, parse_trades_by_llm
-
-    tmp = Path(tempfile.mkstemp(suffix=Path(name).suffix or ".png")[1])
     try:
-        tmp.write_bytes(data)
-        text = ocr_image(tmp)
-    except Exception as e:  # noqa: BLE001
-        return JSONResponse({"error": f"OCR 失败: {type(e).__name__}"}, status_code=500)
-    finally:
-        try:
-            os.unlink(tmp)
-        except OSError:
-            pass
+        data = await _read_upload_image(request)
+        text = _ocr_upload(data, ".png")
+    except _UploadError as e:
+        return JSONResponse({"error": str(e)}, status_code=422)
 
     state = build_entry_state(conf, store, load_trades(trades_path))
     instruments = [{"id": i["id"], "name": i["name"], "type": i["type"]} for i in state["instruments"]]
     trades = parse_trades_by_llm(text, instruments)
     return {"text": text, "trades": trades, "ai_parsed": trades is not None}
+
+
+@router.post("/instruments/parse-image")
+async def instrument_parse_image(
+    request: Request,
+    conf=Depends(get_conf),
+    store=Depends(get_store),
+):
+    """标的识别录入（S2）：标的详情页截图 → Vision OCR → GLM 结构化新标的草稿。
+
+    返回 instrument 与 POST /instruments 载荷字段对齐（type 非法/id 撞车时清空交用户补），
+    无 GLM Key 时 ai_parsed=false 只回 OCR 原文（用户对照手动填表）。
+    """
+    from ..ocr import parse_instrument_by_llm
+    from ..portfolio import load_portfolio
+
+    try:
+        data = await _read_upload_image(request)
+        text = _ocr_upload(data, ".png")
+    except _UploadError as e:
+        return JSONResponse({"error": str(e)}, status_code=422)
+
+    conf_ins = load_portfolio(store, None)
+    existing_ids = [i.id for i in conf_ins.instruments]
+    draft = parse_instrument_by_llm(text, existing_ids)
+    return {"text": text, "instrument": draft, "ai_parsed": draft is not None}
 
 
 @router.get("/instruments")

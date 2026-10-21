@@ -11,6 +11,12 @@ if [ -f .env.dev ]; then
   set -a; source .env.dev; set +a
 fi
 
+# GLM Key（S2 设置页写入的 config/glm.local.env）：启动时一并注入，
+# 免去重启后需在设置页重存一次才生效的缺口
+if [ -f config/glm.local.env ]; then
+  set -a; source config/glm.local.env; set +a
+fi
+
 : "${INVEST_JWT_SECRET:?缺 INVEST_JWT_SECRET（写入 invest-platform/.env.dev，见 scripts/dev-serve.sh 头部模板）}"
 
 mkdir -p logs

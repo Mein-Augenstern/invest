@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { request, showApiError } from '@/api/client'
 import { ensureLogin } from '@/api/auth'
+import { getServer, getToken } from '@/api/config'
 
 interface InsRow {
   id: string
@@ -109,6 +110,67 @@ function onDelete(r: InsRow) {
   })
 }
 
+// ---- 拍照识别填表（S2）：标的详情页截图 → 后端 OCR+GLM → 反显表单 ----
+const parsing = ref(false)
+const ocrText = ref('')
+const showOcrText = ref(false)
+
+function onParseShot() {
+  uni.chooseImage({
+    count: 1,
+    sizeType: ['compressed'],
+    success: (res) => {
+      const path = res.tempFilePaths?.[0]
+      if (path) uploadShot(path)
+    },
+  })
+}
+
+function uploadShot(filePath: string) {
+  const server = getServer()
+  if (!server) {
+    uni.showToast({ title: '未配置服务器地址（设置页）', icon: 'none' })
+    return
+  }
+  parsing.value = true
+  ocrText.value = ''
+  uni.uploadFile({
+    url: `${server}/api/invest/instruments/parse-image`,
+    filePath,
+    name: 'file',
+    header: { Authorization: `Bearer ${getToken()}` },
+    success: (res) => {
+      if (res.statusCode !== 200) {
+        let msg = `识别失败（HTTP ${res.statusCode}）`
+        try {
+          msg = JSON.parse(res.data).error || msg
+        } catch { /* 保持默认 */ }
+        uni.showToast({ title: msg, icon: 'none', duration: 3000 })
+        return
+      }
+      const data = JSON.parse(res.data)
+      ocrText.value = data.text || ''
+      showOcrText.value = false
+      const ins = data.instrument as Record<string, string> | null
+      if (!data.ai_parsed || !ins) {
+        uni.showToast({ title: 'OCR 完成（无 AI Key 或未识别出标的，请对照原文填写）', icon: 'none', duration: 3000 })
+        showOcrText.value = true
+        return
+      }
+      // 只用非空识别值反显，空字段留给用户补
+      const f = form.value
+      for (const k of ['name', 'type', 'code', 'benchmark_index', 'account'] as const) {
+        if (ins[k]) f[k] = ins[k]
+      }
+      if (ins.id && !f.id) f.id = ins.id
+      if (!TYPES.some((t) => t.value === f.type)) f.type = 'open_end_fund'
+      uni.showToast({ title: '已识别反显，请核对后保存', icon: 'success', duration: 2500 })
+    },
+    fail: (e) => uni.showToast({ title: `上传失败：${e.errMsg || ''}`, icon: 'none' }),
+    complete: () => { parsing.value = false },
+  })
+}
+
 onShow(load)
 </script>
 
@@ -144,6 +206,15 @@ onShow(load)
     <view v-if="showForm" class="mask" @tap="showForm = false">
       <view class="sheet" @tap.stop>
         <view class="sheet-title">{{ editing ? '编辑标的' : '添加标的' }}</view>
+        <button v-if="!editing" class="ghost-btn block" :disabled="parsing" @tap="onParseShot">
+          {{ parsing ? '识别中…' : '拍照识别填表（标的详情页截图）' }}
+        </button>
+        <view v-if="ocrText" class="ocr-fold">
+          <text class="ocr-toggle" @tap="showOcrText = !showOcrText">
+            识别原文 {{ showOcrText ? '收起 ▲' : '展开 ▼' }}
+          </text>
+          <view v-if="showOcrText" class="ocr-text">{{ ocrText }}</view>
+        </view>
         <view class="form-row">
           <text class="form-label">标识</text>
           <input v-model="form.id" class="form-input" :disabled="editing" placeholder="如 my_fund（小写/数字/_）" />
@@ -286,5 +357,36 @@ onShow(load)
   flex: 1;
   font-size: 28rpx;
   text-align: right;
+}
+.ghost-btn {
+  background: #ffffff;
+  border: 1rpx solid #1652a8;
+  border-radius: 10rpx;
+  color: #1652a8;
+  font-size: 26rpx;
+  line-height: 2.4;
+  margin-bottom: 8rpx;
+}
+.ghost-btn.block {
+  width: 100%;
+}
+.ocr-fold {
+  margin: 12rpx 0 4rpx;
+}
+.ocr-toggle {
+  font-size: 24rpx;
+  color: #1652a8;
+}
+.ocr-text {
+  font-size: 24rpx;
+  line-height: 1.9;
+  white-space: pre-wrap;
+  color: #4e5969;
+  background: #f7f8fa;
+  border-radius: 10rpx;
+  padding: 16rpx 20rpx;
+  margin-top: 10rpx;
+  max-height: 320rpx;
+  overflow-y: auto;
 }
 </style>
