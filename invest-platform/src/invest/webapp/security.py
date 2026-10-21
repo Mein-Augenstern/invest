@@ -29,9 +29,12 @@ def _star_jwt_secret() -> str:
 
 
 def parse_star_member(jwt_lib, token: str, secret: str) -> int | None:
-    """校验 star JWT，返回 memberId（subject）；非法/过期返回 None。jwt_lib 作参数便于测试注入。"""
+    """校验 star JWT，返回 memberId（subject）；非法/过期返回 None。jwt_lib 作参数便于测试注入。
+
+    HS384 一并放行：star 侧 jjwt 按密钥长度自动选算法（≥48 字节签 HS384），
+    密钥轮换后 dev JWT_SECRET 为 48 字节，member 签发的即 HS384 token。"""
     try:
-        claims = jwt_lib.decode(token, secret, algorithms=["HS256"])
+        claims = jwt_lib.decode(token, secret, algorithms=["HS256", "HS384"])
     except Exception:  # noqa: BLE001 - 任何解析失败都视为未登录
         return None
     try:
