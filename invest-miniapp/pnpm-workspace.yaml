@@ -1,5 +1,8 @@
-allowBuilds:
-  '@parcel/watcher': true
-  core-js: true
-  core-js-pure: true
-  esbuild: true
+onlyBuiltDependencies:
+  - '@parcel/watcher'
+  - '@dcloudio/uni-app'
+  - '@dcloudio/uni-cli-shared'
+  - core-js
+  - core-js-pure
+  - esbuild
+  - vue-demi

@@ -3,14 +3,6 @@
   "version": "0.1.0",
   "private": true,
   "description": "个人投资管理小程序端（invest-platform 的移动入口，业务上与 star 系列完全独立）",
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "esbuild",
-      "@dcloudio/uni-cli-shared",
-      "@dcloudio/uni-app",
-      "vue-demi"
-    ]
-  },
   "scripts": {
     "dev:mp-weixin": "uni -p mp-weixin",
     "build:mp-weixin": "UNI_OUTPUT_DIR=dist/release/mp-weixin uni build -p mp-weixin && node scripts/postbuild-wxss.js",
