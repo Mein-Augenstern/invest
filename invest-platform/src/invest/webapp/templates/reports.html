@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}报告 · invest{% endblock %}
+{% block content %}
+<div class="card mb-3">
+  <div class="card-header"><h3 class="card-title">生成周报</h3></div>
+  <div class="card-body">
+    <div class="d-flex align-items-center gap-3 flex-wrap">
+      <label class="form-check">
+        <input class="form-check-input" type="checkbox" id="ai-flag">
+        <span class="form-check-label">附加 GLM 解读（需已 export INVEST_GLM_API_KEY）</span>
+      </label>
+      <button class="btn btn-primary" id="btn-generate" type="button">生成周报</button>
+      <span id="gen-result"></span>
+    </div>
+    <div class="text-secondary small mt-2">周报 = 持仓快照 + 策略信号（+ 可选 AI 解读）；生成会顺带评估并落库当期信号。</div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header"><h3 class="card-title">历史报告（data/reports/，仅本机）</h3></div>
+  {% if reports %}
+  <div class="table-responsive">
+    <table class="table table-vcenter card-table">
+      <thead><tr><th>文件</th><th>生成时间</th><th class="num">大小</th><th></th></tr></thead>
+      <tbody>
+      {% for r in reports %}
+        <tr>
+          <td class="num">{{ r.name }}</td>
+          <td>{{ r.mtime }}</td>
+          <td class="num">{{ r.size_kb }} KB</td>
+          <td><a class="btn btn-sm" href="/reports/view/{{ r.name }}">查看</a></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="card-body text-secondary">还没有报告——点上方"生成周报"。</div>
+  {% endif %}
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+document.getElementById("btn-generate").addEventListener("click", async function () {
+  const btn = this; btn.disabled = true; btn.textContent = "生成中…";
+  const result = document.getElementById("gen-result");
+  result.textContent = ""; result.className = "text-secondary";
+  try {
+    const resp = await fetch("/api/reports/generate", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ai: document.getElementById("ai-flag").checked }),
+    });
+    const data = await resp.json();
+    if (resp.ok) location.reload();
+    else { result.textContent = data.error || "生成失败"; result.className = "text-danger"; }
+  } catch (e) {
+    result.textContent = "网络错误: " + e.message; result.className = "text-danger";
+  } finally { btn.disabled = false; btn.textContent = "生成周报"; }
+});
+</script>
+{% endblock %}

@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+{% block title %}回测 · invest{% endblock %}
+{% block content %}
+<div class="card mb-3">
+  <div class="card-header"><h3 class="card-title">中证红利策略回测（怎么读，先看这五条）</h3></div>
+  <div class="card-body" style="line-height:1.9">
+    <details open>
+      <summary><strong>回测是什么 / 三个坑</strong></summary>
+      <p class="text-secondary mb-1">把策略放进<strong>历史数据</strong>里逐月"重放"，看它若当年被执行会怎样。
+      平台用<strong>全收益指数 H00922</strong>（分红再投资计入收益——用价格指数会严重低估红利策略）。
+      三个坑：①<strong>前视偏差</strong>（偷看未来）——引擎只把执行日之前的数据递给策略，结构上不可能；②<strong>幸存者偏差</strong>——今天指数里都是活下来的公司，回测偏乐观，<strong>看策略之间的相对排序比看绝对数字可靠</strong>；③<strong>过拟合</strong>——参数调成历史最优，未来常失效，阈值以规则书为准。</p>
+    </details>
+    <details class="mt-2">
+      <summary><strong>怎么比较六条曲线</strong></summary>
+      <p class="text-secondary mb-1">图中纵轴是<strong>"每投入1元变成多少"（市值÷累计投入）</strong>，天然公平——
+      各策略投入总额不同（聪明策略会停投），直接比市值不公平。横着比高度=收益效率，
+      竖着看跌幅=难受程度。表格里 <strong>XIRR</strong> 是年化收益率（含资金时点），
+      <strong>账户最大浮亏</strong>是"最惨时比你投进去的钱少了多少%"——比指数回撤更贴近体感。</p>
+    </details>
+  </div>
+</div>
+
+<div class="card mb-3">
+  <div class="card-header"><h3 class="card-title">参数</h3></div>
+  <div class="card-body">
+    <div class="row g-3 align-items-end">
+      <div class="col-md-3">
+        <label class="form-label" for="bt-start">回测区间</label>
+        <select id="bt-start" class="form-select">
+          {% for v, label in presets %}<option value="{{ v }}" {{ 'selected' if loop.first }}>{{ label }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label" for="bt-monthly">每月投入（元）</label>
+        <input id="bt-monthly" type="number" class="form-control" value="1000" min="100" step="100">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label" for="bt-drag">跟踪损耗假设（模拟基金真实成本）</label>
+        <select id="bt-drag" class="form-select">
+          {% for o in drag_options %}<option value="{{ o.value }}" {{ 'selected' if o.selected }}>{{ o.label }}</option>{% endfor %}
+        </select>
+        <div class="form-hint">{{ drag_note }}</div>
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">策略（多选）</label>
+        <div class="d-flex flex-wrap gap-3">
+          {% for s in catalog %}
+          <label class="form-check mb-0"><input class="form-check-input bt-code" type="checkbox" value="{{ s.code }}" checked>
+            <span class="form-check-label">{{ s.name }}</span></label>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="col-12">
+        <button class="btn btn-primary" id="bt-run" type="button">▶ 运行回测</button>
+        <span id="bt-status" class="ms-2 text-secondary"></span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="bt-results" style="display:none">
+  <div class="card mb-3">
+    <div class="card-header">
+      <h3 class="card-title">对照总表 <span class="text-secondary small" id="bt-span"></span></h3>
+      <div class="card-actions"><span class="text-secondary small" id="bt-dy"></span></div>
+    </div>
+    <div class="table-responsive"><table class="table table-vcenter" id="bt-table"></table></div>
+  </div>
+  <div class="card chartcard mb-3">
+    <div class="card-header"><h3 class="card-title">资金效率曲线（市值 ÷ 累计投入，越高越好、跌得浅越好）</h3></div>
+    <div class="card-body viz-scope">
+      <div class="d-flex flex-wrap gap-3 mb-2 small text-secondary" id="bt-legend"></div>
+      <div class="chart-box" id="bt-chart"></div>
+    </div>
+  </div>
+  <div class="chart-grid" id="bt-cards"></div>
+  <div class="card">
+    <div class="card-body text-secondary small" style="line-height:1.8">
+      <strong>口径与局限：</strong>全收益指数代理基金（未含联接基金跟踪误差，可用参数保守模拟）；
+      指数历史成分变迁存在幸存者偏差（结论偏乐观，看相对排序）；所有信号只用执行日之前数据（as-of，单测锁定）；
+      未建模赎回费与税。回测回答不了"未来是否重演"。每次运行的完整 Markdown 报告已归档到
+      <a href="/reports">报告页</a>。
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ 'js/invest-charts.js'|asset }}"></script>
+<script>
+"use strict";
+const COLORS = ["--s1", "--s2", "--s3", "--s4", "--s5", "--s6"];
+
+document.getElementById("bt-run").addEventListener("click", async function () {
+  const btn = this; btn.disabled = true;
+  const st = document.getElementById("bt-status");
+  st.textContent = "回测运行中（约几秒）…";
+  const codes = [...document.querySelectorAll(".bt-code:checked")].map((c) => c.value);
+  if (!codes.length) { st.textContent = "请至少选择一个策略"; btn.disabled = false; return; }
+  try {
+    const resp = await fetch("/api/backtest", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        start: document.getElementById("bt-start").value,
+        monthly: parseFloat(document.getElementById("bt-monthly").value) || 1000,
+        drag: parseFloat(document.getElementById("bt-drag").value),
+        codes,
+      }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) { st.textContent = data.error || "回测失败"; return; }
+    st.textContent = "完成 ✓";
+    renderResults(data);
+  } catch (e) { st.textContent = "网络错误: " + e.message; }
+  finally { btn.disabled = false; }
+});
+
+function renderResults(data) {
+  const box = document.getElementById("bt-results");
+  box.style.display = "";
+  document.getElementById("bt-span").textContent = "· " + data.span;
+  document.getElementById("bt-dy").textContent = data.div_yield_now
+    ? `推算滚动股息率 ${data.div_yield_now.toFixed(2)}%（与官网口径交叉验证）` : "";
+
+  // 对照表
+  const tbl = document.getElementById("bt-table"); tbl.textContent = "";
+  const keys = Object.keys(data.results[0].metrics);
+  const thead = document.createElement("thead"); const hrow = document.createElement("tr");
+  ["策略(口径)", ...keys].forEach((h) => { const th = document.createElement("th"); th.textContent = h; hrow.appendChild(th); });
+  thead.appendChild(hrow); tbl.appendChild(thead);
+  const tbody = document.createElement("tbody");
+  data.results.forEach((r) => {
+    const tr = document.createElement("tr");
+    const td0 = document.createElement("td"); td0.textContent = `${r.name}(${r.params})`; tr.appendChild(td0);
+    keys.forEach((k) => { const td = document.createElement("td"); td.className = "num"; td.textContent = r.metrics[k]; tr.appendChild(td); });
+    tbody.appendChild(tr);
+  });
+  tbl.appendChild(tbody);
+
+  // 曲线 + 图例
+  const series = data.results.map((r, i) => ({ name: r.name, color: COLORS[i % COLORS.length], points: r.curve }));
+  const legend = document.getElementById("bt-legend"); legend.textContent = "";
+  data.results.forEach((r, i) => {
+    const item = document.createElement("span");
+    const key = document.createElement("span");
+    key.style.cssText = "display:inline-block;width:18px;height:2px;vertical-align:middle;margin-right:6px;background:var(" + COLORS[i % COLORS.length] + ")";
+    item.append(key, document.createTextNode(r.name));
+    legend.appendChild(item);
+  });
+  const chartHost = document.getElementById("bt-chart"); chartHost.textContent = "";
+  investCharts.lineChart(chartHost, series, { fmt: (v) => v.toFixed(2) + "x" });
+
+  // 分策略卡
+  const cards = document.getElementById("bt-cards"); cards.textContent = "";
+  data.results.forEach((r, i) => {
+    const card = document.createElement("div"); card.className = "card";
+    const header = document.createElement("div"); header.className = "card-header";
+    const key = document.createElement("span");
+    key.style.cssText = "display:inline-block;width:14px;height:3px;border-radius:2px;margin-right:8px;vertical-align:middle;background:var(" + COLORS[i % COLORS.length] + ")";
+    header.append(key, document.createTextNode(`${r.name}（${r.params}）`));
+    card.appendChild(header);
+    const body = document.createElement("div"); body.className = "card-body";
+    const desc = document.createElement("p"); desc.className = "text-secondary small"; desc.textContent = r.desc;
+    body.appendChild(desc);
+    const ul = document.createElement("ul"); ul.className = "list-unstyled mb-2";
+    keys.forEach((k) => {
+      const li = document.createElement("li"); li.className = "small";
+      li.textContent = `${k}：${r.metrics[k]}`;
+      ul.appendChild(li);
+    });
+    body.appendChild(ul);
+    const det = document.createElement("details");
+    const sum = document.createElement("summary"); sum.className = "text-secondary small"; sum.textContent = "订单明细（首3+末3笔）";
+    const t = document.createElement("table"); t.className = "table table-sm";
+    const th = document.createElement("tr"); ["日期", "金额", "点位", "说明"].forEach((h) => { const x = document.createElement("th"); x.textContent = h; th.appendChild(x); });
+    const thead2 = document.createElement("thead"); thead2.appendChild(th); t.appendChild(thead2);
+    const tb = document.createElement("tbody");
+    r.orders_preview.forEach((o) => { const tr = document.createElement("tr"); [o.date, o.amount, Math.round(o.price), o.note].forEach((v) => { const td = document.createElement("td"); td.textContent = String(v); tr.appendChild(td); }); tb.appendChild(tr); });
+    t.appendChild(tb); det.append(sum, t); body.appendChild(det);
+    card.appendChild(body);
+    cards.appendChild(card);
+  });
+}
+</script>
+{% endblock %}

@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}持仓 · invest{% endblock %}
+{% block content %}
+<div class="card mb-3">
+  <div class="card-header"><h3 class="card-title">组合合计</h3></div>
+  <div class="card-body">
+    <span class="me-4">市值 <strong class="num h3">{{ view.total_market_value|fmt }}</strong> 元</span>
+    <span class="me-4">浮动盈亏 <strong class="num h3">{{ view.total_unrealized|fmt }}</strong> 元</span>
+    {% if view.total_xirr is not none %}<span>组合 XIRR <strong class="num h3">{{ view.total_xirr|pct }}</strong></span>{% endif %}
+  </div>
+  {% if view.correlation is not none %}
+  <div class="card-footer">两基准近3年日收益相关系数 <strong class="num">{{ "%0.2f"|format(view.correlation) }}</strong>（越低分散效果越好）</div>
+  {% endif %}
+</div>
+
+<div class="chart-grid">
+  {% for r in view.rows %}
+  <div class="card">
+    <div class="card-header">
+      <h3 class="card-title">{{ r.name }}</h3>
+      <div class="card-actions"><a class="btn btn-sm btn-primary" href="/positions/{{ r.instrument_id }}">详情 →</a></div>
+    </div>
+    <div class="card-body">
+      <div class="stat-grid" style="margin-bottom:0">
+        <div><div class="subheader">持仓份额</div><div class="h2 mb-0 num">{{ r.quantity|fmt(0) }}</div>
+             {% if r.avg_cost %}<div class="text-secondary small">均价成本 {{ r.avg_cost|fmt(4) }}</div>{% endif %}</div>
+        <div><div class="subheader">市值</div><div class="h2 mb-0 num">{{ r.market_value|fmt }}</div></div>
+        <div><div class="subheader">浮动盈亏</div><div class="h2 mb-0 num">{{ r.unrealized|fmt }}</div></div>
+        <div><div class="subheader">XIRR</div><div class="h2 mb-0 num">{% if r.xirr_error %}n/a{% else %}{{ r.xirr|pct }}{% endif %}</div></div>
+      </div>
+      <div class="text-secondary small mt-2">{{ r.account_name }} · 现价/净值 {{ r.price|fmt(4) if r.price else "—" }}{% if r.price %}（{{ r.price_date }}）{% endif %}</div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+{% if chart_data.cmp %}
+<div class="card chartcard mb-3">
+  <div class="card-header"><h3 class="card-title">指数走势对比（同期定基=100）</h3></div>
+  <div class="card-body viz-scope">
+    <div class="d-flex gap-3 mb-2 small text-secondary" id="cmp-legend"></div>
+    <div class="chart-box" id="cmp-chart"></div>
+    <details><summary class="text-secondary small">数据表（每月·近24个月）</summary><div id="cmp-table"></div></details>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+{% if chart_data.cmp %}
+<script>window.CMP = {{ chart_data.cmp | tojson }};</script>
+<script src="{{ 'js/invest-charts.js'|asset }}"></script>
+<script>
+(function () {
+  const D = window.CMP;
+  const colors = ["--s1", "--s2"];
+  const legend = document.getElementById("cmp-legend");
+  if (legend) D.series.forEach(function (s, i) {
+    const item = document.createElement("span");
+    const key = document.createElement("span");
+    key.style.display = "inline-block"; key.style.width = "18px"; key.style.height = "2px";
+    key.style.background = "var(" + colors[i] + ")"; key.style.verticalAlign = "middle"; key.style.marginRight = "6px";
+    item.append(key, document.createTextNode(s.name));
+    legend.appendChild(item);
+  });
+  const host = document.getElementById("cmp-chart");
+  if (host) investCharts.lineChart(host,
+    D.series.map(function (s, i) { return { name: s.name, color: colors[i], points: s.points }; }),
+    { fmt: (v) => v.toFixed(0) });
+  const tb = document.getElementById("cmp-table");
+  if (tb) investCharts.monthlyTable(tb, D.series.map(function (s, i) {
+    return { name: s.name, color: colors[i], points: s.points };
+  }), (v) => v.toFixed(1));
+})();
+</script>
+{% endif %}
+{% endblock %}

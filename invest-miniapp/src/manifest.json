@@ -1,0 +1,23 @@
+{
+  "name": "invest",
+  "appid": "",
+  "description": "个人投资管理",
+  "versionName": "0.6.0",
+  "versionCode": "100",
+  "transformPx": false,
+  "vueVersion": "3",
+  "mp-weixin": {
+    "appid": "wx8bb4b89c676c6df8",
+    "setting": {
+      "urlCheck": false
+    },
+    "usingComponents": true,
+    "libVersion": "3.8.0"
+  },
+  "h5": {
+    "title": "invest",
+    "devServer": {
+      "port": 5174
+    }
+  }
+}

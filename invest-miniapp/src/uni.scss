@@ -1,0 +1,15 @@
+/**
+ * uni-app 内置样式变量（保持默认值；本项目实际样式以 App.vue 与各页面 scoped 样式为准，
+ * 风格基线：企业内部平台风——白卡细边框、无渐变、无重阴影） */
+$uni-color-primary: #1652a8;
+$uni-color-success: #2e9e5b;
+$uni-color-warning: #d46b08;
+$uni-color-error: #d54941;
+
+$uni-text-color: #1d2129;
+$uni-text-color-inverse: #fff;
+$uni-text-color-grey: #999;
+$uni-text-color-placeholder: #808080;
+
+$uni-bg-color: #ffffff;
+$uni-bg-color-grey: #f8f8f8;

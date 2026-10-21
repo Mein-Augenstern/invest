@@ -1,0 +1,29 @@
+<div class="card">
+  <div class="card-header"><h3 class="card-title">基准指数估值</h3></div>
+  <div class="table-responsive">
+    <table class="table table-vcenter card-table">
+      <thead><tr>
+        <th>指数</th><th>代码</th><th class="num">收盘</th><th class="num">PE(TTM)</th>
+        <th class="num">PE分位(5y)</th><th class="num">PE分位(全历史)</th>
+        <th class="num">股息率(近12月)</th><th class="num">距5年高点回撤</th>
+      </tr></thead>
+      <tbody>
+      {% for b in view.benchmarks %}
+        <tr>
+          <td>{{ b.name }}</td>
+          <td>{{ b.code or "?" }}</td>
+          <td class="num">{{ b.close|fmt(0) }}</td>
+          <td class="num">{{ b.pe_ttm|fmt(2) }}</td>
+          <td class="num">{{ b.pct_5y|fmt(0) }}{% if b.pct_5y is not none %}%{% endif %}</td>
+          <td class="num">{{ b.pct_all|fmt(0) }}{% if b.pct_all is not none %}%{% endif %}</td>
+          <td class="num">{{ b.dyield|fmt(2) }}{% if b.dyield is not none %}%{% endif %}</td>
+          <td class="num">{{ b.drawdown_5y|pct(1) }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if view.correlation is not none %}
+  <div class="card-footer">两基准近3年日收益相关系数：<strong class="num">{{ "%0.2f"|format(view.correlation) }}</strong>（越低分散效果越好）</div>
+  {% endif %}
+</div>

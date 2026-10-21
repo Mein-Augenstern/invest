@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+{% block title %}{{ d.name }} · invest{% endblock %}
+{% block content %}
+<div class="card mb-3">
+  <div class="card-header">
+    <h3 class="card-title">{{ d.name }}{% if d.code %}（{{ d.code }}）{% endif %}</h3>
+    <div class="card-actions"><a href="/positions" class="btn btn-sm">← 持仓总览</a></div>
+  </div>
+  <div class="card-body">
+    <div class="stat-grid" style="margin-bottom:0">
+      <div><div class="subheader">持仓份额</div><div class="h2 mb-0 num">{{ d.row.quantity|fmt(0) }}</div>
+           {% if d.row.avg_cost %}<div class="text-secondary small">均价成本 {{ d.row.avg_cost|fmt(4) }}</div>{% endif %}</div>
+      <div><div class="subheader">市值</div><div class="h2 mb-0 num">{{ d.row.market_value|fmt }}</div></div>
+      <div><div class="subheader">浮动盈亏</div><div class="h2 mb-0 num">{{ d.row.unrealized|fmt }}</div>
+           <div class="text-secondary small">已实现 {{ d.row.realized_pnl|fmt }} · 分红 {{ d.row.cash_dividend|fmt }}</div></div>
+      <div><div class="subheader">XIRR（资金加权）</div><div class="h2 mb-0 num">{% if d.row.xirr_error %}n/a{% else %}{{ d.row.xirr|pct }}{% endif %}</div></div>
+    </div>
+  </div>
+  <div class="card-footer">
+    {{ d.account.name if d.account else "—" }}{% if d.account and d.account.tax_note %} · {{ d.account.tax_note }}{% endif %}
+    · 现价/净值 {{ d.row.price|fmt(4) if d.row.price else "—" }}{% if d.row.price %}（{{ d.row.price_date }}）{% endif %}
+  </div>
+</div>
+
+{% if d.nav_series %}
+<div class="card chartcard mb-3">
+  <div class="card-header"><h3 class="card-title">{{ "单位净值走势" if d.type == "open_end_fund" else "价格走势" }}</h3></div>
+  <div class="card-body viz-scope">
+    {% include "partials/trade_legend.html" %}
+    <div class="chart-box" id="nav-chart"></div>
+    <details><summary class="text-secondary small">数据表（每月·近24个月）</summary><div id="nav-table"></div></details>
+  </div>
+</div>
+{% endif %}
+
+{% if d.benchmark %}
+<div class="card mb-3">
+  <div class="card-header"><h3 class="card-title">基准估值 · {{ d.benchmark.name }}{% if d.benchmark.code %}（{{ d.benchmark.code }}）{% endif %}</h3></div>
+  <div class="card-body">
+    <div class="stat-grid" style="margin-bottom:0">
+      <div><div class="subheader">滚动PE(TTM)</div><div class="h2 mb-0 num">{{ d.benchmark.pe_ttm|fmt(2) }}</div></div>
+      <div><div class="subheader">PE分位(5y)</div><div class="h2 mb-0 num">{{ d.benchmark.pct_5y|fmt(0) }}{% if d.benchmark.pct_5y is not none %}%{% endif %}</div>
+           <div class="text-secondary small">全历史 {{ d.benchmark.pct_all|fmt(0) }}{% if d.benchmark.pct_all is not none %}%{% endif %}</div></div>
+      <div><div class="subheader">股息率(近12月)</div><div class="h2 mb-0 num">{{ d.benchmark.dyield|fmt(2) }}{% if d.benchmark.dyield is not none %}%{% endif %}</div></div>
+      <div><div class="subheader">距5年高点回撤</div><div class="h2 mb-0 num">{{ d.benchmark.drawdown_5y|pct(1) }}</div>
+           <div class="text-secondary small">收盘 {{ d.benchmark.close|fmt(0) }}</div></div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% if d.pe_series %}
+<div class="card chartcard mb-3">
+  <div class="card-header"><h3 class="card-title">{{ d.benchmark.name }} · 滚动PE历史</h3></div>
+  <div class="card-body viz-scope">
+    <div class="chart-box" id="pe-chart"></div>
+    <details><summary class="text-secondary small">数据表（每月·近24个月）</summary><div id="pe-table"></div></details>
+  </div>
+</div>
+{% endif %}
+
+{% if d.lookthrough %}
+<div class="card mb-3">
+  <div class="card-header"><h3 class="card-title">基金透视（持仓穿透）· {{ d.lookthrough.period }}</h3></div>
+  <div class="card-body">
+    <div class="row g-4">
+      <div class="col-lg-7">
+        <div class="subheader mb-2">前十大重仓股（直接持股部分）</div>
+        <table class="table table-sm table-vcenter">
+          <thead><tr><th>#</th><th>股票</th><th class="num">占净值比例</th><th style="width:38%"></th></tr></thead>
+          <tbody>
+          {% for h in d.lookthrough.holdings[:10] %}
+            <tr>
+              <td class="num text-secondary">{{ h.rank }}</td>
+              <td>{{ h.name }} <span class="text-secondary small num">{{ h.code }}</span></td>
+              <td class="num">{{ h.weight_pct|fmt(2) }}%</td>
+              <td><div class="progress progress-sm" style="height:6px">
+                <div class="progress-bar" style="width: {{ (h.weight_pct / (d.lookthrough.holdings[0].weight_pct or 1) * 100)|round|int }}%"></div>
+              </div></td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="col-lg-5">
+        <div class="subheader mb-2">行业分布（直接持股合计 {{ d.lookthrough.industry_total_pct|fmt(1) }}%）</div>
+        <table class="table table-sm table-vcenter">
+          <tbody>
+          {% for i in d.lookthrough.industry %}
+            <tr>
+              <td>{{ i.name }}</td>
+              <td class="num" style="width:64px">{{ i.weight_pct|fmt(1) }}%</td>
+              <td style="width:34%"><div class="progress progress-sm" style="height:6px">
+                <div class="progress-bar bg-orange" style="width: {{ (i.weight_pct / (d.lookthrough.industry[0].weight_pct or 1) * 100)|round|int }}%"></div>
+              </div></td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+        <div class="text-secondary small mt-2">
+          本基金为 ETF 联接基金：主要资产投向目标 ETF，上表为基金定期报告披露的
+          <strong>直接持股</strong>部分；完整敞口≈目标ETF（跟踪中证红利指数100只高股息股）。
+          数据按季报更新，设置页"手动拉数"可刷新。
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% if d.signals %}
+<div class="card">
+  <div class="card-header"><h3 class="card-title">该标的信号（最近10条）</h3>
+    <div class="card-actions"><a href="/signals" class="btn btn-sm">全部 →</a></div></div>
+  <ul class="list-group list-group-flush">
+    {% for s in d.signals %}
+    <li class="list-group-item d-flex align-items-start flex-wrap gap-2">
+      <span class="badge mt-1 {% if s.status == '已确认' %}bg-green-lt{% elif s.status == '已忽略' %}bg-secondary-lt{% else %}bg-blue-lt{% endif %}">{{ s.status }}</span>
+      <div class="flex-grow-1">
+        <div><span class="text-secondary small">{{ s.rule }} · {{ s.metric }}：<span class="num">{{ s.value }}</span></span></div>
+        <div class="mt-1">{{ s.action }}</div>
+      </div>
+      <span class="text-secondary small mt-1 text-nowrap">{{ s.date }}</span>
+    </li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+{% if d.nav_series or d.pe_series %}
+<script>
+window.DETAIL = {
+  name: {{ d.name | tojson }},
+  navSeries: {{ d.nav_series | tojson }},
+  events: {{ d.events | tojson }},
+  peSeries: {{ d.pe_series | tojson }},
+  peName: {{ (d.benchmark.name if d.benchmark else "") | tojson }}
+};
+</script>
+<script src="{{ 'js/invest-charts.js'|asset }}"></script>
+<script>
+(function () {
+  const D = window.DETAIL;
+  if (D.navSeries && D.navSeries.length) {
+    const host = document.getElementById("nav-chart");
+    if (host) investCharts.lineChart(host,
+      [{ name: D.name, color: "--s1", points: D.navSeries }],
+      { endLabel: false, fmt: (v) => v.toFixed(4), events: D.events });
+    const tb = document.getElementById("nav-table");
+    if (tb) investCharts.monthlyTable(tb, [{ name: "净值", color: "--s1", points: D.navSeries }], (v) => v.toFixed(4));
+  }
+  if (D.peSeries && D.peSeries.length) {
+    const host = document.getElementById("pe-chart");
+    if (host) investCharts.lineChart(host,
+      [{ name: D.peName || "滚动PE", color: "--s2", points: D.peSeries }], { endLabel: false });
+    const tb = document.getElementById("pe-table");
+    if (tb) investCharts.monthlyTable(tb, [{ name: "滚动PE", color: "--s2", points: D.peSeries }], (v) => v.toFixed(2));
+  }
+})();
+</script>
+{% endif %}
+{% endblock %}

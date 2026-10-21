@@ -1,0 +1,26 @@
+<div class="card">
+  <div class="card-header">
+    <h3 class="card-title">策略信号{% if signals %}（活跃建议 {{ signals|length }} 条）{% endif %}</h3>
+    <div class="card-actions"><a href="/signals" class="btn btn-sm">全部与历史 →</a></div>
+  </div>
+  {% if signals %}
+  <ul class="list-group list-group-flush">
+    {% for s in signals %}
+    <li class="list-group-item d-flex align-items-start flex-wrap gap-2">
+      <span class="badge mt-1 {% if s.status == '已确认' %}bg-green-lt{% elif s.status == '已忽略' %}bg-secondary-lt{% else %}bg-blue-lt{% endif %}">{{ s.status }}</span>
+      <div class="flex-grow-1">
+        <div>
+          <strong>{{ s.instrument }}</strong>
+          <span class="text-secondary ms-2 small">{{ s.rule }} · {{ s.metric }}：<span class="num">{{ s.value }}</span></span>
+        </div>
+        <div class="mt-1">{{ s.action }}</div>
+      </div>
+      <span class="text-secondary small mt-1 text-nowrap">{{ s.date }}</span>
+    </li>
+    {% endfor %}
+  </ul>
+  <div class="card-footer text-secondary small">信号=规则+数据，是纪律闹钟而非预测；确认与历史流转在信号页。</div>
+  {% else %}
+  <div class="card-body text-secondary">暂无活跃信号。到 <a href="/signals">信号页</a> 点"立即评估"，或运行 <code>uv run python -m invest signals</code>。</div>
+  {% endif %}
+</div>

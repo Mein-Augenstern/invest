@@ -1,0 +1,130 @@
+{
+  "easycom": {
+    "autoscan": true,
+    "custom": {
+      "^wd-(.*)": "wot-design-uni/components/wd-$1/wd-$1.vue"
+    }
+  },
+  "pages": [
+    {
+      "path": "pages/overview/overview",
+      "style": {
+        "navigationBarTitleText": "总览",
+        "enablePullDownRefresh": true,
+        "backgroundTextStyle": "dark"
+      }
+    },
+    {
+      "path": "pages/trades/trades",
+      "style": {
+        "navigationBarTitleText": "流水"
+      }
+    },
+    {
+      "path": "pages/signals/signals",
+      "style": {
+        "navigationBarTitleText": "信号"
+      }
+    },
+    {
+      "path": "pages/settings/settings",
+      "style": {
+        "navigationBarTitleText": "我的"
+      }
+    },
+    {
+      "path": "pages/summary/summary",
+      "style": {
+        "navigationBarTitleText": "统计",
+        "enablePullDownRefresh": true,
+        "backgroundTextStyle": "dark"
+      }
+    },
+    {
+      "path": "pages/backtest/backtest",
+      "style": {
+        "navigationBarTitleText": "策略回测"
+      }
+    },
+    {
+      "path": "pages/instrument/instrument",
+      "style": {
+        "navigationBarTitleText": "标的详情"
+      }
+    },
+    {
+      "path": "pages/report/report",
+      "style": {
+        "navigationBarTitleText": "周报",
+        "enablePullDownRefresh": true,
+        "backgroundTextStyle": "dark"
+      }
+    },
+    {
+      "path": "pages/valuation/valuation",
+      "style": {
+        "navigationBarTitleText": "指数估值",
+        "enablePullDownRefresh": true,
+        "backgroundTextStyle": "dark"
+      }
+    },
+    {
+      "path": "pages/diary/diary",
+      "style": {
+        "navigationBarTitleText": "投资日记"
+      }
+    },
+    {
+      "path": "pages/annual/annual",
+      "style": {
+        "navigationBarTitleText": "年度复盘"
+      }
+    },
+    {
+      "path": "pages/ocr/ocr",
+      "style": {
+        "navigationBarTitleText": "截图识别"
+      }
+    },
+    {
+      "path": "pages/instruments/instruments",
+      "style": {
+        "navigationBarTitleText": "标的管理"
+      }
+    }
+  ],
+  "tabBar": {
+    "color": "#7f8389",
+    "selectedColor": "#1d2129",
+    "backgroundColor": "#ffffff",
+    "borderStyle": "black",
+    "list": [
+      {
+        "pagePath": "pages/overview/overview",
+        "text": "总览"
+      },
+      {
+        "pagePath": "pages/summary/summary",
+        "text": "统计"
+      },
+      {
+        "pagePath": "pages/trades/trades",
+        "text": "流水"
+      },
+      {
+        "pagePath": "pages/signals/signals",
+        "text": "信号"
+      },
+      {
+        "pagePath": "pages/settings/settings",
+        "text": "我的"
+      }
+    ]
+  },
+  "globalStyle": {
+    "navigationBarTextStyle": "black",
+    "navigationBarTitleText": "invest",
+    "navigationBarBackgroundColor": "#ffffff",
+    "backgroundColor": "#f5f6f7"
+  }
+}

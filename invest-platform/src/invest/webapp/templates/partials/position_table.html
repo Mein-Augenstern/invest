@@ -1,0 +1,43 @@
+<div class="card">
+  <div class="card-header"><h3 class="card-title">持仓明细</h3></div>
+  <div class="table-responsive">
+    <table class="table table-vcenter card-table">
+      <thead><tr>
+        <th>标的</th><th>账户</th><th class="num">持仓</th><th class="num">现价/净值</th>
+        <th class="num">均价成本</th><th class="num">市值</th><th class="num">浮动盈亏</th>
+        <th class="num">已实现盈亏</th><th class="num">现金分红</th><th class="num">XIRR</th>
+      </tr></thead>
+      <tbody>
+      {% for r in view.rows %}
+        <tr>
+          <td>{{ r.name }}</td>
+          <td>{{ r.account_name }}</td>
+          <td class="num">{{ r.quantity|fmt(0) }}</td>
+          {% if r.state == "full" %}
+            <td class="num">{{ "%0.4f"|format(r.price) }} <span class="text-secondary small">({{ r.price_date }})</span></td>
+            <td class="num">{{ r.avg_cost|fmt(4) }}</td>
+            <td class="num">{{ r.market_value|fmt }}</td>
+            <td class="num">{{ r.unrealized|fmt }}</td>
+          {% elif r.state == "noprice" %}
+            <td>缺价格</td>
+            <td class="num">{{ r.avg_cost|fmt(4) }}</td>
+            <td>—</td><td>—</td>
+          {% else %}
+            <td>—</td><td>—</td><td>—</td><td>—</td>
+          {% endif %}
+          <td class="num">{{ r.realized_pnl|fmt }}</td>
+          <td class="num">{{ r.cash_dividend|fmt }}</td>
+          <td class="num">{% if r.xirr_error %}n/a{% else %}{{ r.xirr|pct }}{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if view.total_market_value is not none %}
+  <div class="card-footer">
+    组合合计：市值 <strong class="num">{{ view.total_market_value|fmt }}</strong> 元，
+    浮动盈亏 <strong class="num">{{ view.total_unrealized|fmt }}</strong> 元{% if view.total_xirr is not none %}，
+    组合 XIRR <strong class="num">{{ view.total_xirr|pct }}</strong>{% endif %}
+  </div>
+  {% endif %}
+</div>

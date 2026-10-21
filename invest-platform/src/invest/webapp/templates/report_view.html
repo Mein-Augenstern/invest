@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}{{ name }} · invest{% endblock %}
+{% block content %}
+<div class="card">
+  <div class="card-header">
+    <h3 class="card-title num">{{ name }}</h3>
+    <div class="card-actions"><a href="/reports" class="btn btn-sm">← 返回列表</a></div>
+  </div>
+  <div class="card-body"><pre class="mb-0" style="white-space: pre-wrap; font-size: 13px;">{{ content }}</pre></div>
+</div>
+{% endblock %}

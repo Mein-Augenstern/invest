@@ -1,0 +1,76 @@
+# 持仓配置示例 —— 复制为 portfolio.local.yaml 后填写真实数据
+# portfolio.local.yaml 已被 .gitignore 排除：真实持仓属于敏感数据，不进仓库
+
+meta:
+  owner: me
+  base_currency: CNY
+
+instruments:
+  - id: consumer50_etf            # 平台内部标识（trades.csv 中引用）
+    type: etf                     # etf | open_end_fund | stock | bond | wealth
+    name: 消费50ETF
+    code: ""                      # TODO: 券商App持仓页查看场内代码
+    benchmark_index: "中证消费50"  # 用于估值(PE分位)的基准指数名称
+    account: a_stock
+
+  - id: csi_dividend_pension
+    type: open_end_fund
+    name: 中证红利基金(个人养老金Y份额)
+    code: ""                      # TODO: 养老金App持仓页查看基金代码
+    benchmark_index: "中证红利"
+    benchmark_tr_code: "H00922"   # 中证红利全收益(回测用)
+    account: pension
+
+  # ---- P9 扩品类示例（按需复制，不需要的删掉） ----
+  - id: sample_stock
+    type: stock                   # A股个股：行情走 stock_zh_a_hist（东财前复权→新浪兜底）
+    name: 示例个股
+    code: ""                      # 6位数字，如 600519
+    account: a_stock
+
+  - id: sample_bond
+    type: bond                    # 场内债券（国债/公司债/可转债）：三源兜底，见 docs/03
+    name: 示例债券
+    code: ""                      # 带市场前缀，如 sh019547 / sh113050(可转债)
+    account: a_stock
+
+  - id: bank_wealth_1
+    type: wealth                  # 银行理财/存款/货基：无公开行情，`invest nav` 手工录净值
+    name: 示例银行理财
+    code: ""                      # 留空即可，序列键自动用 id
+    account: bank
+
+accounts:
+  - id: a_stock
+    name: A股证券账户
+    tax_note: 卖出盈利正常计税
+  - id: pension
+    name: 个人养老金账户
+    tax_note: 缴存抵扣(上限12000/年)，领取缴3%
+  - id: bank
+    name: 银行账户
+    tax_note: 理财利息暂无税
+
+# 策略参数（与 docs/02-strategy-rules.md 对应；改参数先升规则书版本并写明理由）
+strategy:
+  base_monthly_invest: 2000       # 消费50 基准定投金额(元/月)
+  percentile_windows_years: 5     # PE分位回看窗口(年)
+  zones:                          # [分位下界, 上界, 定投系数]
+    - [0, 20, 2.0]
+    - [20, 50, 1.5]
+    - [50, 70, 1.0]
+    - [70, 85, 0.5]
+    - [85, 101, 0.0]
+  pension_annual_cap: 12000       # 养老金年度缴存上限(元)
+  rebalance_deviation_pct: 10     # 偏离目标配置±pct 触发再平衡信号
+  target_weights:                 # 目标配置比例（权益部分，键=instrument id）
+    consumer50_etf: 0.5
+    csi_dividend_pension: 0.5
+
+# 交易流水存放于 data/trades.csv（gitignore），列定义：
+# date, instrument_id, action, quantity, price, fee, note
+# action ∈ { buy, sell, dividend_cash, dividend_reinvest, adjust, contribute }
+#   - buy/sell: quantity=份额, price=成交价（理财可记 price=1，金额即份额）
+#   - dividend_cash: quantity=持有份额, price=每份分红金额
+#   - contribute: 养老金缴存（不折份额，缴存进度单独统计）
+# 理财(wealth)净值：`uv run python -m invest nav bank_wealth_1 --value 1.0234`

@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block title %}策略 · invest{% endblock %}
+{% block content %}
+<div class="card mb-3">
+  <div class="card-header">
+    <h3 class="card-title">从零读懂你的策略（新手导读）</h3>
+  </div>
+  <div class="card-body" style="line-height:1.9">
+    <details open>
+      <summary class="mb-2"><strong>第 1 步 · 为什么你买的是"指数"而不是某只股票？</strong></summary>
+      <p class="text-secondary mb-2">你持有的两只产品都是<strong>指数基金</strong>：消费50ETF 跟踪"中证消费50指数"（一篮子50家大消费公司），
+      红利基金跟踪"中证红利指数"（100家分红最多的公司）。买指数 = 买一篮子公司，任何一家暴雷都伤不了你根本——这是新手最省心的第一道保护。</p>
+    </details>
+    <details class="mb-2">
+      <summary class="mb-2"><strong>第 2 步 · 什么是"贵"和"便宜"？（PE 和分位）</strong></summary>
+      <p class="text-secondary mb-2">PE（市盈率）= 公司总市值 ÷ 赚的钱。PE 越低，相当于"这家公司越便宜"。<br>
+      但便宜不便宜不能只看绝对数，要跟<strong>它自己的历史</strong>比——这就是<strong>分位</strong>：
+      "现在的 PE 比过去 N 年里 X% 的时间都便宜"。<br>
+      <span class="badge bg-blue-lt">活例子</span> 你持仓的基准：消费50 当前 PE 分位约 <strong>19%</strong>
+      （比过去5年里 81% 的时间都便宜，属于"低估区"）；中证红利分位约 <strong>96%</strong>（历史高位区）。
+      打开 <a href="/positions">持仓页</a> 的 PE 历史图，蓝色线现在的位置就是"分位"的直观含义。</p>
+    </details>
+    <details class="mb-2">
+      <summary class="mb-2"><strong>第 3 步 · 你的两个账户，用的是两套完全不同的策略</strong></summary>
+      <p class="text-secondary mb-2">
+        <strong>① A股账户（消费50ETF）→ "估值分位定投"：</strong>波动大、可以随时买卖，所以策略管的是<strong>什么时候买多少</strong>——
+        便宜多买、贵了少买甚至停。规则写在下面的表格里，写死后不靠感觉。<br>
+        <strong>② 养老金账户（红利基金）→ "配置与纪律"：</strong>钱锁到退休、买卖没意义，所以策略管的是<strong>纪律</strong>——
+        每年缴满抵税额度、拿住不动、只在比例跑偏时调整。两套策略对应两种钱的"脾气"，互不套用。</p>
+    </details>
+    <details class="mb-2">
+      <summary class="mb-2"><strong>第 4 步 · 为什么是"定投"而不是"等最低点一把梭"？</strong></summary>
+      <p class="text-secondary mb-2">没人能持续猜中最低点（专业机构也做不到）。定投 = 摊开时间分批买入，
+      跌了同样的钱买到更多份额——把"下跌"从敌人变成打折进货。加上分位调节后，就是"打折力度越大进货越多"。<br>
+      <span class="badge bg-blue-lt">活例子</span> 现在消费50 在低估区，规则书说本期定投金额 ×2.0——这就是"便宜多买"自动发生的样子。</p>
+    </details>
+    <details class="mb-2">
+      <summary class="mb-2"><strong>第 5 步 · 信号是什么？我怎么用它？</strong></summary>
+      <p class="text-secondary mb-2">平台每天把规则算一遍，输出"建议动作"（见下方各策略卡的<strong>当前状态</strong>）。
+      信号不是预言，是<strong>提醒你按既定规则行动的闹钟</strong>。用法三步：看信号 → 在券商App手动执行 →
+      回平台确认。执行与否永远由你决定，平台绝不自动下单（红线）。</p>
+    </details>
+    <details class="mb-2">
+      <summary class="mb-2"><strong>第 6 步 · 两个常见新手问题</strong></summary>
+      <p class="text-secondary mb-2">
+        <strong>"红利现在分位96%，要不要卖？"</strong> 不急。卖出规则与买入规则是分开的（规则书§1只规定了停止买入），
+        高位区先执行"停止新增"，存量按"分批止盈评估"走——而具体止盈参数要等回看验证后才会定稿，不拍脑袋。<br>
+        <strong>"跌了很慌怎么办？"</strong> 回到第 2 步看分位：只要还在低估区，下跌=折扣；账户市值波动 ≠ 亏损，
+        卖出才算数。平台的浮动盈亏只是"此刻结算的话"的数字。</p>
+    </details>
+    <div class="alert alert-info mb-0">
+      建议的阅读路径：本页两块内容（导读 + 你的策略卡）→ <a href="/positions">持仓页</a>看PE历史图 → <a href="/signals">信号页</a>试着确认一条信号。
+      完整规则细节在仓库 <code>docs/business/strategy-rules.md</code>（版本化管理，改参数必留痕）。
+    </div>
+  </div>
+</div>
+
+{% for c in cards %}
+<div class="card mb-3">
+  <div class="card-header">
+    <h3 class="card-title">{{ c.name }}<span class="text-secondary ms-2" style="font-size:.8em">{{ c.kind_label }} · {{ c.rulebook_ref }}</span></h3>
+  </div>
+  <div class="card-body">
+    <p class="text-secondary mb-3">{{ c.logic }}</p>
+
+    {% if c.zones %}
+    <div class="table-responsive">
+      <table class="table table-vcenter card-table">
+        <thead><tr><th>PE分位区间</th><th class="num">定投系数</th><th></th></tr></thead>
+        <tbody>
+        {% for z in c.zones %}
+          <tr class="{{ 'table-primary' if z.active }}">
+            <td class="num">{{ z.lo|fmt(0) }}% ~ {{ z.hi|fmt(0) }}%</td>
+            <td class="num">× {{ "%0.1f"|format(z.mult) }}{% if z.mult == 0 %}（停止买入）{% endif %}</td>
+            <td>{% if z.active %}<span class="badge bg-blue-lt">← 当前在这里</span>{% endif %}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if c.current %}
+    <div class="alert alert-success">
+      <strong>当前状态：</strong>{{ c.current.metric }} = <strong class="num">{{ c.current.value|fmt(0) }}%</strong>（{{ c.current.zone_desc }}）
+      → <strong>{{ c.current.action }}</strong>
+    </div>
+    {% else %}
+    <div class="alert alert-warning mb-0">暂无足够估值数据（先在设置页"手动拉数"，或该标的未配置基准指数代码）。</div>
+    {% endif %}
+    <div class="text-secondary small">{{ c.notes|join("；") }}</div>
+    {% endif %}
+
+    {% if c.rules %}
+    <div class="row g-3">
+      {% for r in c.rules %}
+      <div class="col-md-6">
+        <div class="card card-sm">
+          <div class="card-body">
+            <div class="subheader">{{ r.title }}</div>
+            <div>{{ r.desc }}</div>
+            {% if r.progress is defined %}
+            <div class="progress progress-sm mt-2" style="height:8px;">
+              <div class="progress-bar" style="width: {{ [r.progress, 100]|min }}%"></div>
+            </div>
+            <div class="text-secondary small mt-1 num">{{ r.progress_label }}（{{ r.progress|fmt(0) }}%）</div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endfor %}
+{% endblock %}

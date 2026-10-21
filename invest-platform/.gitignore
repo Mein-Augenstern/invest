@@ -1,0 +1,20 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+dist/
+build/
+
+# 敏感数据不出本机（真实持仓/流水/数据库/报告）
+# 注意锚点 /data/：只忽略仓库根的数据目录，不能裸写 data/——
+# 曾误伤源码目录 src/invest/data/（数据层 5 个文件从未入库，2026-10-18 组仓时暴露修复）
+config/portfolio.local.yaml
+/data/
+
+# 运行期日志（宿主机网关等）
+logs/
+
+# 本机 dev 密钥/连接串（公网化改造 2026-10-21，绝不入库）
+.env.dev
+data/backups/

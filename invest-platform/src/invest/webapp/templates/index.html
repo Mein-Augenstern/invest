@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}总览 · invest{% endblock %}
+{% block content %}
+<div class="stat-grid">
+    <div class="card card-sm">
+      <div class="card-body"><div class="subheader">组合市值</div>
+        <div class="h2 mb-0 num">{{ view.total_market_value|fmt }}<span class="text-secondary small"> 元</span></div></div>
+    </div>
+    <div class="card card-sm"><div class="card-body"><div class="subheader">浮动盈亏</div>
+      <div class="h2 mb-0 num">{{ view.total_unrealized|fmt }}<span class="text-secondary small"> 元</span></div></div></div>
+    <div class="card card-sm"><div class="card-body"><div class="subheader">组合 XIRR（资金加权）</div>
+      <div class="h2 mb-0 num">{{ view.total_xirr|pct }}</div>
+      <div class="text-secondary small">含现金流时点，反映真实体验</div></div></div>
+    <div class="card card-sm"><div class="card-body"><div class="subheader">配置来源</div>
+      <div class="h4 mb-0 mt-2">{{ view.config_source }}</div>
+      {% if view.is_example_config %}<div class="text-warning small">示例配置——请复制为 portfolio.local.yaml</div>{% endif %}</div></div>
+  </div>
+</div>
+{% include "partials/position_table.html" %}
+{% include "partials/benchmark_table.html" %}
+
+{% if chart_data.holdings %}
+<div class="chart-grid">
+  {% for h in chart_data.holdings %}
+    <div class="card chartcard">
+      <div class="card-header"><h3 class="card-title">{{ h.name }}（{{ h.code }}）· {{ h.chart_title }}</h3></div>
+      <div class="card-body viz-scope">
+        {% include "partials/trade_legend.html" %}
+        <div class="chart-box" data-chart="holding-{{ loop.index0 }}"></div>
+        <details><summary class="text-secondary small">数据表（每月·近24个月）</summary>
+          <div data-table="holding-{{ loop.index0 }}"></div></details>
+      </div>
+    </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% include "partials/signal_table.html" %}
+{% endblock %}
+{% block scripts %}
+{% if chart_data.holdings %}
+<script>window.CHART_DATA = {{ chart_data | tojson }};</script>
+<script src="{{ 'js/invest-charts.js'|asset }}"></script>
+<script>
+(function () {
+  (window.CHART_DATA.holdings || []).forEach(function (h, i) {
+    const host = document.querySelector('[data-chart="holding-' + i + '"]');
+    if (!host) return;
+    const color = h.hue === 0 ? "--s1" : "--s2";
+    investCharts.lineChart(host, [{ name: h.name, color: color, points: h.navSeries }],
+      { endLabel: false, fmt: (v) => v.toFixed(4), events: h.events || [] });
+    const tb = document.querySelector('[data-table="holding-' + i + '"]');
+    if (tb) investCharts.monthlyTable(tb, [{ name: "净值", color: color, points: h.navSeries }], (v) => v.toFixed(4));
+  });
+})();
+</script>
+{% endif %}
+{% endblock %}

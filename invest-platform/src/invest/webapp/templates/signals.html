@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}信号 · invest{% endblock %}
+{% block content %}
+<div class="card mb-3">
+  <div class="card-header">
+    <h3 class="card-title">策略信号</h3>
+    <div class="card-actions">
+      <button class="btn btn-primary btn-sm" id="btn-evaluate" type="button">立即评估</button>
+    </div>
+  </div>
+  <div class="card-body text-secondary">
+    信号 = 规则书 + 数据，仅为纪律工具（非收益保证）；评估是显式动作，页面刷新不会重复入库。
+  </div>
+  {% if signals %}
+  <div class="table-responsive">
+    <table class="table table-vcenter">
+      <colgroup>
+        <col style="width:5%"><col style="width:11%"><col style="width:17%"><col style="width:24%"><col style="width:28%"><col style="width:8%"><col style="width:14%">
+      </colgroup>
+      <thead><tr><th>#</th><th>日期</th><th>标的</th><th>依据（规则 · 指标：取值）</th><th>建议动作</th><th>状态</th><th></th></tr></thead>
+      <tbody>
+      {% for s in signals %}
+        <tr>
+          <td class="num">{{ s.id }}</td>
+          <td class="text-nowrap">{{ s.date }}</td>
+          <td>{{ s.instrument }}</td>
+          <td><span class="text-secondary small">{{ s.rule }}</span><br>{{ s.metric }}：<span class="num">{{ s.value }}</span></td>
+          <td>{{ s.action }}</td>
+          <td>
+            {% if s.status == "已确认" %}<span class="badge bg-green-lt">{{ s.status }}</span>
+            {% elif s.status == "已忽略" %}<span class="badge bg-secondary-lt">{{ s.status }}</span>
+            {% else %}<span class="badge bg-blue-lt">{{ s.status }}</span>{% endif %}
+          </td>
+          <td class="text-nowrap">
+            <button class="btn btn-sm btn-ghost-success btn-status" data-id="{{ s.id }}" data-status="已确认" type="button" {{ 'disabled' if s.status == '已确认' }}>确认</button>
+            <button class="btn btn-sm btn-ghost-danger btn-status" data-id="{{ s.id }}" data-status="已忽略" type="button" {{ 'disabled' if s.status == '已忽略' }}>忽略</button>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="card-body text-secondary">暂无信号记录，点右上"立即评估"生成。</div>
+  {% endif %}
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+document.getElementById("btn-evaluate").addEventListener("click", async function () {
+  const btn = this; btn.disabled = true; btn.textContent = "评估中…";
+  try {
+    const resp = await fetch("/api/signals/evaluate", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+    const data = await resp.json();
+    if (resp.ok) location.reload();
+    else alert(data.error || "评估失败");
+  } finally { btn.disabled = false; btn.textContent = "立即评估"; }
+});
+document.querySelectorAll(".btn-status").forEach((b) =>
+  b.addEventListener("click", async () => {
+    const resp = await fetch(`/api/signals/${b.dataset.id}/status`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: b.dataset.status }),
+    });
+    if (resp.ok) location.reload();
+    else alert("更新失败");
+  })
+);
+</script>
+{% endblock %}

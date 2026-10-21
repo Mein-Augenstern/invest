@@ -1,0 +1,149 @@
+/* invest 自有视觉层：与 Tabler 主题解耦的图表/数字 token（已过 CVD 与对比度验证）。
+   Tabler 只负责布局壳；图表与数字排版全部圈在 .viz-scope 内自管理。 */
+
+.viz-scope {
+  --page: #f9f9f7;
+  --surface-1: #fcfcfb;
+  --text-primary: #0b0b0b;
+  --text-secondary: #52514e;
+  --muted: #898781;
+  --grid: #e1e0d9;
+  --baseline: #c3c2b7;
+  --border: rgba(11, 11, 11, 0.10);
+  --s1: #2a78d6;
+  --s2: #eb6834;
+  --s3: #1baf7a;
+  --s4: #eda100;
+  --s5: #e87ba4;
+  --s6: #4a3aa7;
+  --s1-wash: rgba(42, 120, 214, 0.14);
+  --s2-wash: rgba(235, 104, 52, 0.14);
+  color-scheme: light;
+}
+
+[data-bs-theme="dark"] .viz-scope {
+  --page: #0d0d0d;
+  --surface-1: #1a1a19;
+  --text-primary: #ffffff;
+  --text-secondary: #c3c2b7;
+  --muted: #898781;
+  --grid: #2c2c2a;
+  --baseline: #383835;
+  --border: rgba(255, 255, 255, 0.10);
+  --s1: #3987e5;
+  --s2: #d95926;
+  --s3: #199e70;
+  --s4: #c98500;
+  --s5: #d55181;
+  --s6: #9085e9;
+  --s1-wash: rgba(57, 135, 229, 0.20);
+  --s2-wash: rgba(217, 89, 38, 0.20);
+  color-scheme: dark;
+}
+
+/* 数字列对齐 */
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+/* 图表容器：刚性隔离盒——固定高度 + 布局隔离 + 绘制裁剪。
+   contain:paint(等价overflow:hidden的裁剪效果)确保即使某引擎把SVG画到盒外，
+   像素也被裁掉，绝不可能叠到相邻内容上。 */
+.viz-scope .chart-box {
+  position: relative;
+  width: 100%;
+  height: 260px;
+  overflow: hidden;
+  contain: layout paint style;
+}
+.viz-scope .chart-box svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+@media (max-width: 576px) {
+  .viz-scope .chart-box { height: 200px; }
+}
+
+/* 图表 tooltip（invest-charts.js 自建，不依赖页面 DOM 约定） */
+.viz-tooltip {
+  position: fixed;
+  pointer-events: none;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+  display: none;
+  z-index: 100;
+  min-width: 130px;
+}
+.viz-tooltip .t-date {
+  color: var(--muted);
+  font-size: 11px;
+  margin-bottom: 4px;
+}
+.viz-tooltip .row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+}
+.viz-tooltip .key {
+  display: inline-block;
+  width: 14px;
+  height: 2px;
+}
+.viz-tooltip .val {
+  color: var(--text-primary);
+  font-weight: 600;
+  margin-left: auto;
+}
+
+/* Tabler 桥接：卡片内的图表区域留白 */
+.chartcard .card-body { padding: 1rem 1.25rem; }
+
+/* 自控网格：不再依赖 Tabler 的 .row/.col 拉伸机制（其 row-cards 的 height:100%
+   链在图表卡片上会退化解成 56px 空壳）。grid 轨道按内容撑开，构造上杜绝塌陷。 */
+.stat-grid,
+.chart-grid {
+  display: grid;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+.stat-grid {
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+}
+.chart-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr));
+}
+.stat-grid > .card,
+.chart-grid > .card,
+.chartcard {
+  height: auto; /* 击退框架可能带来的高度约束 */
+  min-height: 0;
+}
+.chart-grid > .card {
+  margin-bottom: 0; /* 间距由grid的gap负责 */
+}
+
+/* 流水页摘要 tiles（.viz-scope 内） */
+.viz-scope .tiles {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+@media (max-width: 768px) { .viz-scope .tiles { grid-template-columns: repeat(2, 1fr); } }
+.viz-scope .tile {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: var(--surface-1);
+}
+.viz-scope .tile .label { font-size: 12px; color: var(--text-secondary); }
+.viz-scope .tile .value { font-size: 20px; font-weight: 600; margin-top: 2px; color: var(--text-primary); }
+.viz-scope .tile .sub { font-size: 11px; margin-top: 2px; color: var(--muted); }
+.viz-scope .meter { height: 6px; border-radius: 3px; margin-top: 8px; background: var(--s1-wash); position: relative; overflow: hidden; }
+.viz-scope .meter .fill { position: absolute; inset: 0 auto 0 0; background: var(--s1); border-radius: 3px; }
