@@ -30,7 +30,8 @@ CREATE TABLE IF NOT EXISTS csi_catalog (
     name VARCHAR(128) NOT NULL,
     full_name VARCHAR(255) NOT NULL,
     updated_at VARCHAR(32) NOT NULL,
-    PRIMARY KEY (index_code)
+    PRIMARY KEY (index_code),
+    KEY idx_csi_catalog_name (name)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 CREATE TABLE IF NOT EXISTS fund_holdings (
     instrument VARCHAR(64) NOT NULL,
@@ -60,7 +61,9 @@ CREATE TABLE IF NOT EXISTS signals (
     action VARCHAR(255) NOT NULL,
     status VARCHAR(16) NOT NULL DEFAULT '建议',
     created_at VARCHAR(32) NOT NULL,
-    PRIMARY KEY (id)
+    PRIMARY KEY (id),
+    KEY idx_signals_dedup (date, instrument_id, rule_ref, action),
+    KEY idx_signals_status_id (status, id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 CREATE TABLE IF NOT EXISTS diary (
     id INT NOT NULL AUTO_INCREMENT,

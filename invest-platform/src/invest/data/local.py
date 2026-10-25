@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS csi_catalog (
     full_name TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
+CREATE INDEX IF NOT EXISTS idx_csi_catalog_name ON csi_catalog(name);
 CREATE TABLE IF NOT EXISTS fund_holdings (
     instrument TEXT NOT NULL,
     period TEXT NOT NULL,
@@ -56,6 +57,8 @@ CREATE TABLE IF NOT EXISTS signals (
     status TEXT NOT NULL DEFAULT '建议',
     created_at TEXT NOT NULL
 );
+CREATE INDEX IF NOT EXISTS idx_signals_dedup ON signals(date, instrument_id, rule_ref, action);
+CREATE INDEX IF NOT EXISTS idx_signals_status_id ON signals(status, id);
 CREATE TABLE IF NOT EXISTS diary (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     date TEXT NOT NULL UNIQUE,
