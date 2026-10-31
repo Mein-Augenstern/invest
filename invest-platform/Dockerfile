@@ -5,6 +5,9 @@ FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
 
 WORKDIR /app
 
+# 容器内默认 PyPI 在国内网络拉取会被断——固定清华源（uv 读取 UV_DEFAULT_INDEX）
+ENV UV_DEFAULT_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple
+
 # 依赖先行（层缓存）：只拷贝依赖清单
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project

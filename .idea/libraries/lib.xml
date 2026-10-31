@@ -1,0 +1,10 @@
+<component name="libraryTable">
+  <library name="lib">
+    <CLASSES>
+      <root url="jar://$PROJECT_DIR$/invest-miniapp/node_modules/miniprogram-ci/dist/ci/android-miniapp-toolkit/lib/apksigner.jar!/" />
+      <root url="jar://$PROJECT_DIR$/invest-miniapp/node_modules/miniprogram-ci/dist/ci/android-miniapp-toolkit/lib/apkcert.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>

@@ -2,6 +2,15 @@
 # 拓扑（G2 过渡期，正式域名备案后替换为 HTTPS + Caddy）：
 #   微信小程序(体验版+调试) ──▶ http://47.92.235.34:8080 (frps vhostHTTPPort)
 #     ──按 Host=47.92.235.34 路由──▶ 本 proxy ──▶ Mac 本机 invest --lan :8792
+#
+# G2 调通踩坑三连（全部实证，勿回退）：
+# 1. localIP 必须是 host.docker.internal——frpc 跑在 Docker Desktop 的 --network host
+#    容器里，127.0.0.1 是 Linux VM 回环（uvicorn 在 Mac 宿主不可达 → 转发 EOF）；
+#    容器 run 需 --add-host=host.docker.internal:host-gateway（见 frpc-up.sh）
+# 2. hostHeaderRewrite=127.0.0.1 必需——invest 的 Host 白名单只含 localhost/LAN IP
+#    （公网 IP 直达会被 403 host not allowed）
+# 3. frpc 镜像版本须与 ECS frps（0.64.0）严格同版——跨版本控制连接能登录但
+#    http work 连接转发 EOF；镜像经 daocloud 源拉取（直连 Docker Hub 层下载被断）
 # token 用 {$VAR} 环境变量展开（frp ≥0.52 语法；真实值由 frpc-up.sh 从
 # invest-platform/.env.dev 的 INVEST_FRP_TOKEN 注入，不入库）
 serverAddr = "47.92.235.34"
@@ -14,8 +23,9 @@ transport.heartbeatTimeout = 90
 transport.tcpMux = true
 
 [[proxies]]
-name = "invest-lan"
+name = "invest-vhost"
 type = "http"
-localIP = "127.0.0.1"
+localIP = "star-invest-lan"
 localPort = 8792
-customDomains = ["47.92.235.34"]   # 过渡期用 IP 作 Host（小程序直连 IP 场景）
+customDomains = ["47.92.235.34"]
+hostHeaderRewrite = "127.0.0.1"

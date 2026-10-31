@@ -10,7 +10,9 @@ dependencies = [
     "markdown>=3.10.3",
     "pandas>=2.0",
     "pyjwt>=2.15.1",
-    "pyobjc-framework-vision>=12.2.2",
+    # macOS Vision 本地 OCR（S2 拍照识别）——仅 darwin 安装：Linux 容器里构建失败
+    # （找 /usr/bin/sw_vers）且运行期 import 走惰性加载 + 平台 fallback，容器形态自然降级
+    "pyobjc-framework-vision>=12.2.2; sys_platform == 'darwin'",
     "pymysql>=1.1.0",
     "python-multipart>=0.0.32",
     "pyyaml>=6.0",

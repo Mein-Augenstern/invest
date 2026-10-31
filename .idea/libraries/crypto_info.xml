@@ -1,0 +1,9 @@
+<component name="libraryTable">
+  <library name="crypto_info">
+    <CLASSES>
+      <root url="jar://$PROJECT_DIR$/invest-platform/.venv/lib/python3.11/site-packages/akshare/data/crypto_info.zip!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>
