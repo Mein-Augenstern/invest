@@ -1,0 +1,21 @@
+# invest 公网隧道（Mac frpc → ECS frps vhost:8080 → 小程序直连）
+# 拓扑（G2 过渡期，正式域名备案后替换为 HTTPS + Caddy）：
+#   微信小程序(体验版+调试) ──▶ http://47.92.235.34:8080 (frps vhostHTTPPort)
+#     ──按 Host=47.92.235.34 路由──▶ 本 proxy ──▶ Mac 本机 invest --lan :8792
+# token 用 {$VAR} 环境变量展开（frp ≥0.52 语法；真实值由 frpc-up.sh 从
+# invest-platform/.env.dev 的 INVEST_FRP_TOKEN 注入，不入库）
+serverAddr = "47.92.235.34"
+serverPort = 7000
+auth.token = "{$INVEST_FRP_TOKEN}"
+
+loginFailExit = false        # ECS/网络抖动自动重连
+transport.heartbeatInterval = 30
+transport.heartbeatTimeout = 90
+transport.tcpMux = true
+
+[[proxies]]
+name = "invest-lan"
+type = "http"
+localIP = "127.0.0.1"
+localPort = 8792
+customDomains = ["47.92.235.34"]   # 过渡期用 IP 作 Host（小程序直连 IP 场景）
