@@ -9,12 +9,12 @@ from datetime import datetime
 
 import pandas as pd
 
-from . import metrics
-from .config import Portfolio, series_kind
-from .data.local import LocalStore
-from .data.mysql_store import MySQLStore
-from .ledger.ledger import Position
-from .ledger.trades import Trade
+from .. import metrics
+from ..config import Portfolio, series_kind
+from ..data.local import LocalStore
+from ..data.mysql_store import MySQLStore
+from ..ledger.ledger import Position
+from ..ledger.trades import Trade
 
 
 @dataclass
@@ -142,7 +142,7 @@ def evaluate_rebalance(
 def evaluate_all(
     conf: Portfolio, store: LocalStore | MySQLStore, trades: list[Trade]
 ) -> list[Signal]:
-    from .ledger.ledger import build_positions
+    from ..ledger.ledger import build_positions
 
     positions = build_positions(trades)
     signals: list[Signal] = []
