@@ -85,6 +85,10 @@ def create_app(
     app.add_middleware(HostCheckMiddleware)
     app.add_middleware(TokenAuthMiddleware)
 
+    # S03 全局异常处理：兜底 500 → 友好 JSON + X-Error-Type 头
+    from .error_handlers import register_error_handlers
+    register_error_handlers(app)
+
     app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
     from . import routes_api, routes_mp, routes_pages

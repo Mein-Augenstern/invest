@@ -53,6 +53,10 @@ class Instrument:
     benchmark_index: str = ""  # 估值基准指数名称
     benchmark_tr_code: str = ""  # 基准全收益指数代码（如中证红利H00922，回测用）
     account: str = ""
+    # S01-A 真实组合配置扩展（portfolio.local.yaml 可选字段，仅展示/初始化用，
+    # 不参与行情拉取——份额/成本的真实来源是 trades.csv 流水）
+    quantity: float = 0.0  # 初始持仓份额（0=未填，从流水计算）
+    cost_price: float = 0.0  # 初始成本价（0=未填）
 
 
 @dataclass
