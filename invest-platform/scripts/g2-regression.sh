@@ -108,6 +108,16 @@ done
 LOGN=$(docker logs star-invest-star --since 3m 2>&1 | grep -c "GET /api/invest")
 [ "$LOGN" -gt 2 ] && r E3 "日志可观测" 0 "3min内 $LOGN 条请求" || r E3 "日志可观测" 1 "仅 $LOGN 条"
 
+
+# ---- B5 memberId 稳定性（S01-B：AppSecret 配置后同一微信重登应同 memberId）----
+M1=$(curl -s -m 8 -X POST -H "Content-Type: application/json" -d '{"code":"b5-first"}' "$BASE/api/auth/wx-login" \
+  | python3 -c "import json,sys;d=json.load(sys.stdin);print((d.get('data') or {}).get('memberId',d.get('data',{}).get('member',{}).get('id','')))" 2>/dev/null)
+M2=$(curl -s -m 8 -X POST -H "Content-Type: application/json" -d '{"code":"b5-second"}' "$BASE/api/auth/wx-login" \
+  | python3 -c "import json,sys;d=json.load(sys.stdin);print((d.get('data') or {}).get('memberId',d.get('data',{}).get('member',{}).get('id','')))" 2>/dev/null)
+# mock 通道下每次新 code=新 memberId（预期不同）；AppSecret 配置后同一微信=同一 memberId（预期相同）
+# 回归判定：两条请求都能拿到 memberId（非空）即 PASS（稳定性验证需真机）
+[ -n "$M1" ] && [ -n "$M2" ] && r B5 "memberId可获取" 0 "m1=$M1 m2=$M2 (mock下不同为预期)" || r B5 "memberId可获取" 1 "m1=$M1 m2=$M2"
+
 # ---- D4 多端并发（本机直连 8792 + 公网同发）----
 L1=$(curl -s -m 8 -X POST -H "Content-Type: application/json" -H "Authorization: Bearer $(grep INVEST_LAN_TOKEN= /Users/yangzhini/Documents/GitHub/invest/invest-platform/.env.dev | cut -d= -f2 | tr -d "'")" \
   -d '{"date":"2026-11-01","instrument_id":"consumer50_etf","action":"buy","quantity":10,"price":0.5,"note":"d4-lan"}' \

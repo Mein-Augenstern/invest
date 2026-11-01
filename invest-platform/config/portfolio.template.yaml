@@ -1,0 +1,45 @@
+# 真实组合配置模板（复制为 portfolio.local.yaml 并填入真实数据）
+# 此文件是模板——真实持仓绝不入 git（.gitignore 已配 config/portfolio.local.yaml）
+# 标的品类：stock(股票/ETF) / fund(场外基金) / bond(债券) / wealth(理财)
+# price_source: auto=akshare 四级兜底 / manual=手工净值（理财/私募等无公开行情的）
+
+instruments:
+  # 示例 1：场内 ETF（有实时行情）
+  - id: consumer50_etf          # 唯一标识（自定义，下划线分隔）
+    name: 消费50ETF              # 显示名
+    type: stock                 # 品类
+    code: "159928"              # 场内代码
+    market: sz                  # 交易所（sz/sh/bj）
+    price_source: auto          # 行情来源
+    quantity: 11000             # 当前持仓份额
+    cost_price: 0.5000          # 成本价
+
+  # 示例 2：场外基金（每日净值）
+  - id: dividend_connect_y
+    name: 中证红利联接Y
+    type: fund
+    code: "10003287"            # 基金代码
+    price_source: auto          # akshare 基金净值
+    quantity: 20000
+    cost_price: 1.2500
+
+  # 示例 3：理财/私募（手工净值）
+  # - id: private_wealth
+  #   name: 某理财产品
+  #   type: wealth
+  #   price_source: manual       # 手工录入净值
+  #   quantity: 100000           # 份额（元）
+  #   cost_price: 1.0000
+
+# 账户配置
+accounts:
+  pension:                      # 个人养老金账户
+    annual_limit: 12000         # 年度缴存上限
+    contributed_this_year: 0    # 当年已缴存
+
+# 信号策略参数（S02 策略引擎消费）
+strategy:
+  pe_percentile_low: 20         # PE 5年分位低估线
+  pe_percentile_high: 80        # PE 5年分位高估线
+  drawdown_alert: 0.15          # 回撤告警线（15%）
+  signal_expiry_days: 7         # 信号过期天数

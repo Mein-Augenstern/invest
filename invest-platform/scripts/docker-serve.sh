@@ -21,6 +21,22 @@ fi
 DB_URL="${INVEST_DB_URL:-}"
 CONTAINER_DB_URL="${DB_URL//127.0.0.1:3307/star-mysql:3306}"
 
+# portfolio 挂载：真实组合优先于示例（S01-A；portfolio.local.yaml 不入库）
+PORTFOLIO_MOUNT=""
+if [ -f config/portfolio.local.yaml ]; then
+  PORTFOLIO_MOUNT="-v $(pwd)/config/portfolio.local.yaml:/app/config/portfolio.local.yaml:ro"
+  echo "检测到真实组合配置（portfolio.local.yaml）——将挂载到容器"
+fi
+
+# WX_MP_SECRET 透传（S01-B；未配置时 member 走 mock 通道并打 WARN）
+WX_MP_SECRET_ARG=()
+if [ -n "${WX_MP_SECRET:-}" ]; then
+  WX_MP_SECRET_ARG=(-e WX_MP_SECRET)
+  echo "检测到 WX_MP_SECRET——member 将走真实 code2Session（数据按 openid 归一）"
+else
+  echo "警告：WX_MP_SECRET 未配置——member 走 mock 通道（每次登录新 memberId，数据不归一）" >&2
+fi
+
 NET="docker_default"
 IMAGE="star-site/platform-invest:latest"
 DATA_DIR="$(pwd)/data"
@@ -41,8 +57,10 @@ docker run -d --name star-invest-star --network "$NET" --restart unless-stopped 
   -e INVEST_HOSTS_EXTRA=star-invest-star,127.0.0.1,localhost \
   -e INVEST_DB_URL="$CONTAINER_DB_URL" \
   -e INVEST_DATA_DIR=/data \
+  ${WX_MP_SECRET_ARG[@]+"${WX_MP_SECRET_ARG[@]}"} \
   -v "$DATA_DIR:/data" \
   -v "$(pwd)/config:/app/config:ro" \
+  $PORTFOLIO_MOUNT \
   "$IMAGE" >> logs/docker-serve.log 2>&1
 echo "star-invest-star :8790 (star JWT, 网关上游)"
 
