@@ -6,6 +6,8 @@
   · star：校验 star 平台 JWT（网关 JwtGlobalFilter 同款——HS256 共享密钥、subject=memberId），
     invest 作为独立微服务挂在 star 网关后的纵深防御层。
   两模式共用 ping 白名单；本机模式（两者都未配置）不鉴权。
+- TraceIdMiddleware：读取网关（GatewayDigestWebFilter）透传的 X-Trace-Id 打入日志
+  （日志巡检 P1 修复 2026-11-01——此前 invest 无 trace 概念，跨语言排障链路断裂）。
 - CacheHeadersMiddleware：vendor 静态资源长缓存 immutable；其余静态 no-cache；
   HTML/接口一律 no-store（持仓金额不进浏览器磁盘缓存——敏感数据不出本机的延伸）。
 """
@@ -50,6 +52,24 @@ class HostCheckMiddleware(BaseHTTPMiddleware):
         if host not in allowed:
             return JSONResponse({"error": "host not allowed"}, status_code=403)
         return await call_next(request)
+
+
+class TraceIdMiddleware(BaseHTTPMiddleware):
+    """读取网关透传的 X-Trace-Id 并打进 uvicorn 访问日志行（跨语言 traceId 打通）。
+
+    网关（GatewayDigestWebFilter，Java/WebFlux）在入口生成 traceId 并经
+    X-Trace-Id 头透传到下游；Java 服务经 TraceContext.set 继承，
+    invest（Python）此前无此概念——日志巡检发现"traceId 跨服务断裂"（P1）。
+    本 middleware 把网关 traceId 存入 request.state，并在响应头回传（排障时
+    curl -i 即可拿到 traceId 去网关/服务日志检索）。"""
+
+    async def dispatch(self, request: Request, call_next):
+        trace_id = request.headers.get("x-trace-id", "")
+        request.state.trace_id = trace_id
+        response = await call_next(request)
+        if trace_id:
+            response.headers["X-Trace-Id"] = trace_id
+        return response
 
 
 class TokenAuthMiddleware(BaseHTTPMiddleware):

@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from .. import config as cfg
-from .security import CacheHeadersMiddleware, HostCheckMiddleware, TokenAuthMiddleware
+from .security import CacheHeadersMiddleware, HostCheckMiddleware, TokenAuthMiddleware, TraceIdMiddleware
 
 DEFAULT_HOSTS = {"127.0.0.1", "localhost", "::1", "[::1]", "host.docker.internal"}
 
@@ -81,6 +81,7 @@ def create_app(
     app.state.app_version = cfg.__version__ if hasattr(cfg, "__version__") else "dev"
 
     app.add_middleware(CacheHeadersMiddleware)
+    app.add_middleware(TraceIdMiddleware)  # 跨语言 traceId（日志巡检 P1 修复）
     app.add_middleware(HostCheckMiddleware)
     app.add_middleware(TokenAuthMiddleware)
 
