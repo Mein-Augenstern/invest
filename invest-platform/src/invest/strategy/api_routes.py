@@ -46,7 +46,7 @@ def _fallback_store(request: Request):
 
     class _SimpleStore:
         def __init__(self):
-            self.conn = sqlite3.connect(db_path)
+            self.conn = sqlite3.connect(db_path, check_same_thread=False)
 
     return _SimpleStore()
 

@@ -2,7 +2,7 @@
 import json
 import sqlite3
 from datetime import datetime, timedelta
-from unittest.mock import MagicMock
+from types import SimpleNamespace
 
 import pytest
 from fastapi import FastAPI
@@ -13,14 +13,27 @@ from fastapi.testclient import TestClient
 def app_with_store(tmp_path):
     """创建带 SQLite store 的测试 app。"""
     db = tmp_path / "test.db"
-    conn = sqlite3.connect(str(db))
-    store = MagicMock()
+    conn = sqlite3.connect(str(db), check_same_thread=False)
+    store = SimpleNamespace()
     store.conn = conn
     app = FastAPI()
     app.state.store = store
     from invest.strategy.api_routes import signal_router
     app.include_router(signal_router, prefix="/api/invest")
-    return app, TestClient(app), conn
+    client = TestClient(app)
+    # warm-up：触发 _get_lifecycle → 建表 + fixture 直接建（双保险）
+    from invest.strategy.lifecycle import SignalLifecycleStore
+    _ = SignalLifecycleStore(store)
+    return app, client, conn
+
+
+def _insert_signal(conn, sid, signal_type="buy", status="generated", created=None):
+    """插入测试信号（9 列对齐 lifecycle DDL，含 confirmed_at=None）。"""
+    conn.execute(
+        "INSERT INTO signal_records (id,instrument_id,final_signal,confidence,summary,status,created_at,confirmed_at,results_json) VALUES (?,?,?,?,?,?,?,?,?)",
+        (sid, "consumer50_etf", signal_type, 0.85, "测试信号", status,
+         created or datetime.now().isoformat(), None,
+         json.dumps([{"metric_value": 0.52}])))
 
 
 class TestSignalList:
@@ -46,10 +59,7 @@ class TestSignalConfirm:
 
     def test_confirm_then_paper_trade(self, app_with_store):
         app, client, conn = app_with_store
-        conn.execute(
-            "INSERT INTO signals (id,instrument_id,final_signal,confidence,summary,status,created_at,results_json) VALUES (?,?,?,?,?,?,?,?)",
-            ("sig_test", "consumer50_etf", "buy", 0.85, "PE低估", "generated",
-             datetime.now().isoformat(), json.dumps([{"metric_value": 0.52}])))
+        _insert_signal(conn, "sig_test", "buy")
         conn.commit()
 
         resp = client.post("/api/invest/signals/sig_test/confirm")
@@ -63,10 +73,7 @@ class TestSignalConfirm:
 class TestSignalIgnore:
     def test_ignore(self, app_with_store):
         app, client, conn = app_with_store
-        conn.execute(
-            "INSERT INTO signals (id,instrument_id,final_signal,confidence,summary,status,created_at,results_json) VALUES (?,?,?,?,?,?,?,?)",
-            ("sig_ign", "consumer50_etf", "hold", 0.5, "维持", "generated",
-             datetime.now().isoformat(), "[]"))
+        _insert_signal(conn, "sig_ign", "hold")
         conn.commit()
 
         resp = client.post("/api/invest/signals/sig_ign/ignore")
@@ -90,9 +97,7 @@ class TestSignalExpiry:
     def test_stale_signal_expires(self, app_with_store):
         app, client, conn = app_with_store
         old_date = (datetime.now() - timedelta(days=10)).isoformat()
-        conn.execute(
-            "INSERT INTO signals (id,instrument_id,final_signal,confidence,summary,status,created_at,results_json) VALUES (?,?,?,?,?,?,?,?)",
-            ("sig_old", "consumer50_etf", "buy", 0.9, "旧信号", "generated", old_date, "[]"))
+        _insert_signal(conn, "sig_old", "buy", created=old_date)
         conn.commit()
 
         resp = client.get("/api/invest/signals")
