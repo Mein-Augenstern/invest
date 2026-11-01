@@ -128,6 +128,26 @@ docker logs invest-frpc          # 隧道：login success? proxy success?
 | INVEST_JWT_SECRET | star JWT 校验（<48 字节防 HS384 切换，见 G1 记录） | .env.dev |
 | ECS root 密码 | SSH 运维（expect 注入） | 用户持有 |
 
+## 3.5 日志巡检修复（2026-11-01 追加）
+
+| 问题 | 修复 | 状态 |
+|---|---|---|
+| 网关 digest 盲区（Servlet Filter 在 WebFlux 不注册） | `GatewayDigestWebFilter`（WebFlux GlobalFilter，-200 先于 JWT）——rpc-server-digest.log 从 0 字节变为有真实 JSON 行 | ✅ 已部署验证 |
+| traceId 入口不生成 | 网关入口 UUID 生成 + `X-Trace-Id` 头透传下游 | ✅ 已部署验证 |
+| invest 无 trace 概念（跨语言断裂） | `TraceIdMiddleware`（读 X-Trace-Id → request.state → 响应头回传）——`curl -i` 即可拿到 traceId | ✅ 已部署验证 |
+| MySQL slow_query_log OFF | `SET GLOBAL slow_query_log=ON, long_query_time=0.5` | ✅ 已生效 |
+| family/reminder 503 | 网关有路由但服务未起（非本次 scope，巡检记录） | 📝 已记录 |
+
+### 验证方法
+
+```bash
+# 网关 digest（JSON 行含 traceId/method/path/status/route）
+docker exec star-platform-gateway cat logs/star-site-platform-gateway/rpc-server-digest.log | tail -3
+
+# invest traceId 回传（curl -i 看 X-Trace-Id 响应头）
+curl -i -H "X-Trace-Id: my-test-trace" -H "Authorization: Bearer <token>" http://<invest>/api/invest/ping | grep -i x-trace-id
+```
+
 ## 4. 已知限制与后续
 
 - **HTTP 明文 + IP 直连**：过渡形态。手机必须开"调试模式"（跳过域名校验）；
