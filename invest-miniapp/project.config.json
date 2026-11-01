@@ -14,7 +14,7 @@
     "useCompilerPlugins": false
   },
   "compileType": "miniprogram",
-  "miniprogramRoot": "dist/dev/mp-weixin/",
+  "miniprogramRoot": "dist/release/mp-weixin/",
   "simulatorPluginLibVersion": {},
   "packOptions": {
     "ignore": [],

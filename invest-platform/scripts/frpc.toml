@@ -1,31 +1,25 @@
-# invest 公网隧道（Mac frpc → ECS frps vhost:8080 → 小程序直连）
-# 拓扑（G2 过渡期，正式域名备案后替换为 HTTPS + Caddy）：
-#   微信小程序(体验版+调试) ──▶ http://47.92.235.34:8080 (frps vhostHTTPPort)
-#     ──按 Host=47.92.235.34 路由──▶ 本 proxy ──▶ Mac 本机 invest --lan :8792
-#
-# G2 调通踩坑三连（全部实证，勿回退）：
-# 1. localIP 必须是 host.docker.internal——frpc 跑在 Docker Desktop 的 --network host
-#    容器里，127.0.0.1 是 Linux VM 回环（uvicorn 在 Mac 宿主不可达 → 转发 EOF）；
-#    容器 run 需 --add-host=host.docker.internal:host-gateway（见 frpc-up.sh）
-# 2. hostHeaderRewrite=127.0.0.1 必需——invest 的 Host 白名单只含 localhost/LAN IP
-#    （公网 IP 直达会被 403 host not allowed）
-# 3. frpc 镜像版本须与 ECS frps（0.64.0）严格同版——跨版本控制连接能登录但
-#    http work 连接转发 EOF；镜像经 daocloud 源拉取（直连 Docker Hub 层下载被断）
-# token 用 {$VAR} 环境变量展开（frp ≥0.52 语法；真实值由 frpc-up.sh 从
-# invest-platform/.env.dev 的 INVEST_FRP_TOKEN 注入，不入库）
+# invest 公网隧道 v2（架构归位）：公网 8080 → star 网关容器（网关再转发 /api/invest/**）
+# 变更（G2 收口二阶段）：vhost 后端从 invest --lan:8792 改为 star-platform-gateway:8080——
+#   小程序统一走 star 架构（wx-login 微信登录 → star JWT → 网关路由 invest），
+#   direct 直连模式退役为备用（仅链路排障用）。
+# 踩坑存档（v1 时期，勿回退）：
+# 1. localIP 用容器名（docker_default 网络容器对容器直连）——--network host 的
+#    127.0.0.1 是 Docker VM 回环、host.docker.internal 是桥接间接层
+# 2. hostHeaderRewrite 仅 invest 后端需要（其 Host 白名单）——网关不校验 Host，无需
+# 3. frpc 镜像 0.64.0 与 ECS frps 严格同版（跨版本 work 连接 EOF）
+# token 由 frpc-up.sh 从 .env.dev 的 INVEST_FRP_TOKEN 渲染注入（不入库）
 serverAddr = "47.92.235.34"
 serverPort = 7000
 auth.token = "{$INVEST_FRP_TOKEN}"
 
-loginFailExit = false        # ECS/网络抖动自动重连
+loginFailExit = false
 transport.heartbeatInterval = 30
 transport.heartbeatTimeout = 90
 transport.tcpMux = true
 
 [[proxies]]
-name = "invest-vhost"
+name = "star-gateway-vhost"
 type = "http"
-localIP = "star-invest-lan"
-localPort = 8792
+localIP = "star-platform-gateway"
+localPort = 8080
 customDomains = ["47.92.235.34"]
-hostHeaderRewrite = "127.0.0.1"
