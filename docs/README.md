@@ -27,6 +27,7 @@
 | [tech/frontend/](tech/frontend/) | 前端：[miniapp-engineering.md](tech/frontend/miniapp-engineering.md) 工程指南（API 层/构建链/UI 规范/E2E） |
 | [tech/backend/](tech/backend/) | 后端：[api-contract.md](tech/backend/api-contract.md) API 契约 · [web-architecture.md](tech/backend/web-architecture.md) Web 架构 · [backtest.md](tech/backend/backtest.md) 回测引擎 |
 | [tech/g2-tunnel-runbook.md](tech/g2-tunnel-runbook.md) | **公网隧道运维手册**：五层障碍根因（凭据断层/frps 格式/跨版本/网络拓扑/常驻围剿）+ 一次性部署与日常运维命令 |
+| [tech/g2-acceptance-cases.md](tech/g2-acceptance-cases.md) | **G2 验收用例**：体验版真机 5 组 22 例（接入链路/登录会话/核心功能/网络边界/运维配合）+ 问题记录表 |
 
 ## 维护约定
 
