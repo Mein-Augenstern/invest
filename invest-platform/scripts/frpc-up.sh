@@ -19,11 +19,13 @@ if ! docker ps --format '{{.Names}}' | grep -q '^star-invest-lan$'; then
   echo "警告：star-invest-lan 容器不在运行——先跑 ./scripts/docker-serve.sh 再拉隧道" >&2
 fi
 
-# 渲染配置（token 单行替换；分隔符 | 防 token 内 / 歧义；0600 临时文件）
-RENDERED=$(mktemp /tmp/invest-frpc.XXXXXX.toml)
-chmod 600 "$RENDERED"
+# 渲染配置（token 单行替换；分隔符 | 防 token 内 / 歧义）。
+# 持久文件而非 mktemp：容器 stop/start 会重新读取挂载文件——临时文件随脚本退出被删后，
+# 容器将无配置可读、隧道永久失联（回归 A4/E1 实测踩坑）。落 logs/（gitignore），0600。
+mkdir -p logs
+RENDERED="$(pwd)/logs/frpc.rendered.toml"
 sed "s|{\$INVEST_FRP_TOKEN}|${INVEST_FRP_TOKEN}|" scripts/frpc.toml > "$RENDERED"
-trap 'rm -f "$RENDERED"' EXIT
+chmod 600 "$RENDERED"
 
 docker rm -f invest-frpc 2>/dev/null || true
 # 镜像版本固定 0.64.0 与 ECS frps 严格同版（G2 实调踩坑：跨版本控制连接能登录、
