@@ -31,11 +31,14 @@ mkdir -p "$DATA_DIR" logs
 
 for C in star-invest-star star-invest-lan; do docker rm -f "$C" 2>/dev/null || true; done
 
-# ① star 形态（网关上游）：JWT 鉴权 + gmt 数据目录挂载
+# ① star 形态（网关上游）：JWT 鉴权 + gmt 数据目录挂载。
+# INVEST_HOSTS_EXTRA=容器名——网关转发时 Host 变为上游地址（star-invest-star:8790），
+# invest 的 Host 白名单需放行该值（G2 全链调通踩坑：host not allowed）
 docker run -d --name star-invest-star --network "$NET" --restart unless-stopped \
   -p 127.0.0.1:8790:8790 \
   -e INVEST_AUTH_MODE=star \
   -e INVEST_JWT_SECRET \
+  -e INVEST_HOSTS_EXTRA=star-invest-star,127.0.0.1,localhost \
   -e INVEST_DB_URL="$CONTAINER_DB_URL" \
   -e INVEST_DATA_DIR=/data \
   -v "$DATA_DIR:/data" \
