@@ -117,7 +117,8 @@ class TestRunPullOnce:
         """AC-1 另一半：他实例持锁 → 本实例跳过且不拉数（ran=False 非异常）。"""
         called = []
         monkeypatch.setattr(pull_job, "pull_and_evaluate", lambda *a, **k: called.append(1))
-        other = DistributedLock(_local(tmp_path / "invest.db"), holder="other-node")
+        other = DistributedLock(_local(tmp_path / "invest.db"),
+                                pull_job.LOCK_NAME, holder="other-node")  # 同名锁行才互斥
         assert other.acquire() is True
 
         result = pull_job.run_pull_once(tmp_path, None, holder="this-node")

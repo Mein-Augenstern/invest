@@ -103,3 +103,6 @@
 - **时区双层防线（2026-11-02 实证）**：容器默认 UTC，`hour=20` 会变成北京时间
   凌晨 4 点——docker-serve.sh 注入 `TZ=Asia/Shanghai`（对齐全容器时间戳），
   且调度代码用 `_now_cn()`（ZoneInfo 北京时间）算触发点，与时区环境解耦
+- **锁名协议对齐（2026-11-02）**：`invest-pull` → `sch:invest:pull`（双语言协议
+  `sch:<app>:<task>`——与 Java starsite-schedule 四号组件同规范共存于同一 MySQL，
+  两侧任务可互相观测；组件侧 LOCK_PREFIX 见 docs/schedule.md §8）

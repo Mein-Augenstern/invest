@@ -23,8 +23,9 @@ from .distributed_lock import DistributedLock, LockState, default_holder
 
 logger = logging.getLogger(__name__)
 
-#: 全平台唯一的拉数锁名（所有实例/手动与定时共用一张锁行）
-LOCK_NAME = "invest-pull"
+#: 全平台拉数锁名——双语言协议规范 sch:<app>:<task>（与 Java starsite-schedule 组件
+#: 同规范共存于同一 MySQL，可互相观测；Java 侧锁名见组件 LOCK_PREFIX）
+LOCK_NAME = "sch:invest:pull"
 
 #: 进程内最近一次定时执行留痕（重启即空；跨实例真相在锁表 + series 数据里）
 last_run: dict = {"finished_at": "", "ran": False, "reason": "", "duration_s": 0.0, "evaluated": 0}
