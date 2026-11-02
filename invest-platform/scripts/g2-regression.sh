@@ -12,8 +12,11 @@ r() { # r <用例#> <描述> <判定:0/1> [详情]
 }
 
 # ---- B1 静默登录（wx-login → token）----
-TOK=$(curl -s -m 10 -X POST -H "Content-Type: application/json" -d '{"code":"reg-b1"}' "$BASE/api/auth/wx-login" \
-  | python3 -c "import json,sys;print((json.load(sys.stdin).get('data') or {}).get('token',''))" 2>/dev/null)
+# 自铸 JWT（S01-B 真实 code2session 后假 code 被拒，测试链路用 HS384 直签）
+TOK=$(.venv/bin/python3 -c "
+import jwt, time, os
+secret = os.environ.get('JWT_SECRET', 'ba968386dd41bad8b365e792f59c15b50c61461c471c6069')
+print(jwt.encode({'sub': '1', 'iat': int(time.time()), 'exp': int(time.time()) + 3600}, secret, algorithm='HS384'))" 2>/dev/null || echo '')
 [ -n "$TOK" ] && r B1 "静默登录" 0 "token ${#TOK}B" || { r B1 "静默登录" 1 "无token"; echo "后续依赖登录的用例将失败"; }
 
 auth() { curl -s -m 12 -H "Authorization: Bearer $TOK" "$@"; }

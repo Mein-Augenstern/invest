@@ -2,8 +2,8 @@
   "name": "invest",
   "appid": "",
   "description": "个人投资管理",
-  "versionName": "0.6.0",
-  "versionCode": "100",
+  "versionName": "1.0.2",
+  "versionCode": "102",
   "transformPx": false,
   "vueVersion": "3",
   "mp-weixin": {
