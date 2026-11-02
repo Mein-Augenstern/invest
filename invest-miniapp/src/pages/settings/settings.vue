@@ -7,6 +7,7 @@ import { silentWxLogin, isLoggedIn, memberLabel, ensureLogin } from '@/api/auth'
 import { getServer, setServer, getToken, setToken, getMode, setMode, clearToken } from '@/api/config'
 import { listFamilyMembers, listReminderRules, createReminderRule, deleteReminderRule, INVEST_RULE_PREFIX, type FamilyMember, type ReminderRule } from '@/api/star'
 import type { PullStatus } from '@/types'
+import ErrorCard from '@/components/ErrorCard.vue'
 
 const mode = ref<'gateway' | 'direct'>(getMode())
 const serverInput = ref('')
@@ -219,13 +220,43 @@ function stopPoll() {
 }
 
 onUnmounted(stopPoll)
-onShow(async () => {
-  await ensureLogin()
-  loggedIn.value = isLoggedIn()
-  member.value = memberLabel()
-  loadReminders()
-  loadGlmStatus()
-})
+
+// 页面加载态 + 错误态（ErrorCard 重试）：登录等待 + 连通性探测 + 增强数据
+const pageLoading = ref(false)
+const loadError = ref(false)
+const errorMsg = ref('')
+const retrying = ref(false)
+
+async function loadStatus() {
+  pageLoading.value = true
+  loadError.value = false
+  try {
+    await ensureLogin()
+    loggedIn.value = isLoggedIn()
+    member.value = memberLabel()
+    await ping() // 连通性探测：失败在此页给出可重试的错误卡
+    await Promise.all([loadReminders(), loadGlmStatus()])
+  } catch (e) {
+    loadError.value = true
+    errorMsg.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    pageLoading.value = false
+  }
+}
+
+const retry = async () => {
+  if (retrying.value) return
+  retrying.value = true
+  try {
+    await loadStatus()
+  } catch {
+    /* loadStatus 内部已置 loadError */
+  } finally {
+    retrying.value = false
+  }
+}
+
+onShow(loadStatus)
 </script>
 
 <template>
@@ -241,6 +272,10 @@ onShow(async () => {
         {{ loggedIn ? '已登录' : '未登录' }}
       </text>
     </view>
+
+    <!-- 加载中 / 加载失败（ErrorCard，可重试） -->
+    <view v-if="pageLoading" class="card loading-card">连接服务中…</view>
+    <ErrorCard :visible="loadError && !pageLoading" title="连接失败" :description="errorMsg" :loading="retrying" @retry="retry" />
 
     <!-- 我的工具 -->
     <view class="group">
@@ -386,6 +421,11 @@ onShow(async () => {
 </template>
 
 <style scoped>
+.loading-card {
+  color: #86909c;
+  text-align: center;
+  font-size: 26rpx;
+}
 .profile {
   display: flex;
   align-items: center;

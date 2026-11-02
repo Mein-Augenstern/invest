@@ -4,6 +4,7 @@ import { onLoad } from '@dcloudio/uni-app'
 import { showApiError } from '@/api/client'
 import { ensureLogin } from '@/api/auth'
 import { request } from '@/api/client'
+import ErrorCard from '@/components/ErrorCard.vue'
 
 interface BtResult {
   code: string
@@ -20,11 +21,28 @@ const monthly = ref(1000)
 const start = ref('2013-06-03')
 const instance = getCurrentInstance()
 
+// 加载/错误态 + 重试（ErrorCard）
+const loadError = ref(false)
+const errorMsg = ref('')
+const retrying = ref(false)
+const retry = async () => {
+  if (retrying.value) return
+  retrying.value = true
+  try {
+    await run()
+  } catch {
+    /* run 内部已置 loadError */
+  } finally {
+    retrying.value = false
+  }
+}
+
 // 六色低饱和（企业风）
 const COLORS = ['#6f8fc9', '#7fa88f', '#b89f6a', '#c98b8b', '#94b0d6', '#a6a1c4']
 
 async function run() {
   running.value = true
+  loadError.value = false
   results.value = []
   try {
     await ensureLogin()
@@ -37,6 +55,8 @@ async function run() {
     results.value = out.results
     setTimeout(() => drawCurves(), 350)
   } catch (e) {
+    loadError.value = true
+    errorMsg.value = e instanceof Error ? e.message : String(e)
     showApiError(e)
   } finally {
     running.value = false
@@ -125,6 +145,10 @@ onLoad(() => {
       <view class="muted tip">六种定投纪律对照（估值分位调节投入）；信号是纪律工具，不保证未来收益</view>
     </view>
 
+    <!-- 回放中 / 加载失败（ErrorCard，可重试） -->
+    <view v-if="running && !results.length" class="card loading-card">回放中…（依赖本机历史数据，可能需要数十秒）</view>
+    <ErrorCard :visible="loadError && !running" title="回测失败" :description="errorMsg" :loading="retrying" @retry="retry" />
+
     <view v-if="results.length" class="card">
       <view class="card-title">净值/投入曲线对比<span v-if="span" class="muted">（{{ span }}）</span></view>
       <canvas canvas-id="btChart" id="btChart" class="chart" />
@@ -149,11 +173,16 @@ onLoad(() => {
       <view class="kv"><text class="muted">总投入 → 期末</text><text>{{ r.metrics['总投入'] }} → {{ r.metrics['期末市值'] }}</text></view>
     </view>
 
-    <view v-if="!running && !results.length" class="card empty">回测依赖本机已拉取的全收益指数历史数据（设置页可拉数）</view>
+    <view v-if="!running && !results.length && !loadError" class="card empty">回测依赖本机已拉取的全收益指数历史数据（设置页可拉数）</view>
   </view>
 </template>
 
 <style scoped>
+.loading-card {
+  color: #86909c;
+  text-align: center;
+  font-size: 26rpx;
+}
 .param-row {
   display: flex;
   align-items: flex-end;

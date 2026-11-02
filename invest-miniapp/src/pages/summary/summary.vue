@@ -5,6 +5,7 @@ import { getSummary, type SummaryRow } from '@/api/invest'
 import { request, showApiError } from '@/api/client'
 import { ensureLogin } from '@/api/auth'
 import { fmtAmount, fmtSigned, pnlClass } from '@/utils/format'
+import ErrorCard from '@/components/ErrorCard.vue'
 
 // R3 资产总曲线（与月度统计同源的逐日市值）
 const curve = ref<[number, number][]>([])
@@ -134,6 +135,7 @@ function readCache() {
 
 async function load() {
   loading.value = true
+  loadError.value = false
   try {
     await ensureLogin()
     const data = await getSummary(range.value)
@@ -142,9 +144,27 @@ async function load() {
     uni.setStorageSync(CACHE_KEY, JSON.stringify({ months: data.months, years: data.years, at: new Date().toTimeString().slice(0, 5) }))
     cacheTime.value = ''
   } catch (e) {
+    loadError.value = true
+    errorMsg.value = e instanceof Error ? e.message : String(e)
     showApiError(e)
   } finally {
     loading.value = false
+  }
+}
+
+// 错误态 + 重试（ErrorCard）
+const loadError = ref(false)
+const errorMsg = ref('')
+const retrying = ref(false)
+const retry = async () => {
+  if (retrying.value) return
+  retrying.value = true
+  try {
+    await load()
+  } catch {
+    /* load 内部已置 loadError */
+  } finally {
+    retrying.value = false
   }
 }
 
@@ -180,6 +200,9 @@ onShow(() => {
 
 <template>
   <view class="page">
+    <!-- 加载失败（ErrorCard，可重试） -->
+    <ErrorCard :visible="loadError && !loading" title="加载失败" :description="errorMsg" :loading="retrying" @retry="retry" />
+
     <!-- R3 资产总曲线 -->
     <view class="card">
       <view class="card-title">
@@ -259,7 +282,7 @@ onShow(() => {
         <text class="h-num">浮盈变化</text>
         <text class="h-num">期末市值</text>
       </view>
-      <view v-if="!months.length && !loading" class="empty">暂无数据（先录入流水并拉取净值）</view>
+      <view v-if="!months.length && !loading && !loadError" class="empty">暂无数据（先录入流水并拉取净值）</view>
       <view v-for="m in months" :key="m.month" class="m-row">
         <text class="h-month">{{ m.month.slice(0, 4).slice(2) }}年{{ monthLabel(m.month) }}</text>
         <text class="h-num">{{ fmtAmount(m.net_invested, 0) }}</text>

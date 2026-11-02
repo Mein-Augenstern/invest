@@ -71,3 +71,15 @@ export function getMember(): StarMember | null {
 export function setMember(m: StarMember) {
   uni.setStorageSync(MEMBER_KEY, JSON.stringify(m))
 }
+
+const ONBOARDED_KEY = 'invest_onboarded'
+
+/** S08-AC1 首次启动检测：是否已完成引导 */
+export function isOnboarded(): boolean {
+  return uni.getStorageSync(ONBOARDED_KEY) === true
+}
+
+/** S08 引导完成标记（写入后不再弹出） */
+export function setOnboarded() {
+  uni.setStorageSync(ONBOARDED_KEY, true)
+}

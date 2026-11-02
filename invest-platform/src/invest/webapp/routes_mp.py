@@ -565,7 +565,13 @@ def instrument_detail(
     store=Depends(get_store),
     trades_path=Depends(get_trades_path),
 ):
-    """单标的详情：指标行 + 净值序列(降采样) + 交易事件 + 信号 + 基金透视。"""
+    """单标的详情：指标行 + 净值序列(降采样) + 交易事件 + 信号 + 基金透视。
+
+    S05 韧性：序列缓存超过 STALE_THRESHOLD(6h) 未刷新视为降级数据（拉数失败
+    只能吃旧缓存），返回 stale=True 供前端明示"非最新"；无序列数据不算 stale（走空态）。
+    """
+    from ..config import series_kind
+    from ..data.resilient_provider import is_stale
     from ..reporting import build_instrument_view
 
     data = build_instrument_view(conf, store, load_trades(trades_path), instrument_id)
@@ -581,6 +587,12 @@ def instrument_detail(
             "name": b.name, "code": b.code, "close": b.close, "pe_ttm": b.pe_ttm,
             "pct_5y": b.pct_5y, "pct_all": b.pct_all, "dyield": b.dyield, "drawdown_5y": b.drawdown_5y,
         }
+    # S05: 本地缓存超过阈值未刷新 → 数据来自降级路径，打 stale 标记
+    ins = next((i for i in conf.instruments if i.id == instrument_id), None)
+    data["stale"] = False
+    if ins is not None:
+        updated_at = store.series_updated_at(ins.code or ins.id, series_kind(ins.type))
+        data["stale"] = bool(updated_at) and is_stale(updated_at)
     return data
 
 

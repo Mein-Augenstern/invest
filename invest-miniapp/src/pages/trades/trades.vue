@@ -7,11 +7,27 @@ import { ensureLogin } from '@/api/auth'
 import { fmtQty } from '@/utils/format'
 import type { TradeRow, InstrumentBrief } from '@/types'
 import { ACTION_LABELS } from '@/types'
+import ErrorCard from '@/components/ErrorCard.vue'
 
 const trades = ref<TradeRow[]>([])
 const instruments = ref<InstrumentBrief[]>([])
 const filterId = ref('')
 const loading = ref(false)
+// 错误态 + 重试（ErrorCard）
+const loadError = ref(false)
+const errorMsg = ref('')
+const retrying = ref(false)
+const retry = async () => {
+  if (retrying.value) return
+  retrying.value = true
+  try {
+    await load()
+  } catch {
+    /* load 内部已置 loadError */
+  } finally {
+    retrying.value = false
+  }
+}
 
 // L9 筛选增强：动作类型 + 备注关键词（本地过滤，流水百条内无需服务端）
 const filterAction = ref('')
@@ -101,6 +117,7 @@ const instrumentIndex = computed(() => {
 
 async function load() {
   loading.value = true
+  loadError.value = false
   try {
     await ensureLogin() // gateway 模式：等启动静默登录完成（单飞复用）
     const payload = await getTrades(filterId.value || undefined)
@@ -108,6 +125,8 @@ async function load() {
     instruments.value = payload.instruments
     uni.setStorageSync('invest_cache_trades', JSON.stringify({ trades: payload.trades, instruments: payload.instruments }))
   } catch (e) {
+    loadError.value = true
+    errorMsg.value = e instanceof Error ? e.message : String(e)
     // 失败回退缓存（弱网/后端未起时保可用）
     if (!trades.value.length) {
       try {
@@ -259,9 +278,12 @@ defineExpose({ openAdd })
       <text class="muted count">{{ shownTrades.length }} 笔</text>
     </view>
 
+    <!-- 加载失败（ErrorCard，可重试） -->
+    <ErrorCard :visible="loadError && !loading" title="加载失败" :description="errorMsg" :loading="retrying" @retry="retry" />
+
     <!-- 流水列表 -->
     <view class="card list-card">
-      <view v-if="!trades.length && !loading" class="empty">
+      <view v-if="!trades.length && !loading && !loadError" class="empty">
         <view class="empty-title">暂无流水——品类记账口径速查</view>
         <view class="cq">场外基金：申购按金额录（录法切「按金额」，自动折份额），分红用「红利再投资」</view>
         <view class="cq">ETF/股票/债券：买卖录份额×价格，动词自动切换为买入/卖出</view>

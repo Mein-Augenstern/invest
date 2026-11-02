@@ -169,6 +169,17 @@ class MySQLStore:
                 row = cur.fetchone()
         return (row[0], row[1]) if row else None
 
+    def series_updated_at(self, instrument: str, kind: str) -> str | None:
+        """序列缓存最后刷新时间（S05 stale 判定用，与 LocalStore 对齐）；无数据返回 None。"""
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT MAX(updated_at) FROM series WHERE instrument=%s AND kind=%s",
+                    (instrument, kind),
+                )
+                row = cur.fetchone()
+        return row[0] if row else None
+
     # ---- 中证指数目录 ----
 
     def upsert_catalog(self, code_name: pd.DataFrame) -> int:

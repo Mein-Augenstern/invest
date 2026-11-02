@@ -6,10 +6,26 @@ import { showApiError } from '@/api/client'
 import { ensureLogin } from '@/api/auth'
 import { parseMarkdown, type MdBlock } from '@/utils/markdown-lite'
 import type { ReportJobStatus } from '@/types'
+import ErrorCard from '@/components/ErrorCard.vue'
 
 const loading = ref(true)
 const fileName = ref('')
 const blocks = ref<MdBlock[]>([])
+// 错误态 + 重试（ErrorCard）
+const loadError = ref(false)
+const errorMsg = ref('')
+const retrying = ref(false)
+const retry = async () => {
+  if (retrying.value) return
+  retrying.value = true
+  try {
+    await load()
+  } catch {
+    /* load 内部已置 loadError */
+  } finally {
+    retrying.value = false
+  }
+}
 // 生成任务态（P12）：触发后台生成 → 轮询 → 完成刷新正文
 const genStatus = ref<ReportJobStatus | null>(null)
 const withAi = ref(false)
@@ -17,6 +33,7 @@ let pollTimer: ReturnType<typeof setInterval> | null = null
 
 async function load() {
   loading.value = true
+  loadError.value = false
   try {
     await ensureLogin() // gateway 模式：等启动静默登录完成（单飞复用）
     const res = await getLatestReport()
@@ -28,6 +45,8 @@ async function load() {
       blocks.value = parseMarkdown(res.markdown)
     }
   } catch (e) {
+    loadError.value = true
+    errorMsg.value = e instanceof Error ? e.message : String(e)
     showApiError(e)
   } finally {
     loading.value = false
@@ -102,9 +121,12 @@ load()
       </button>
     </view>
 
+    <!-- 加载失败（ErrorCard，可重试） -->
+    <ErrorCard :visible="loadError && !loading" title="加载失败" :description="errorMsg" :loading="retrying" @retry="retry" />
+
     <view v-if="fileName" class="card file-name muted">{{ fileName }}</view>
 
-    <view v-if="!loading && !fileName" class="card empty">
+    <view v-if="!loading && !fileName && !loadError" class="card empty">
       暂无周报。可在本机执行 `invest report`，或等 cron 生成后再来看。
     </view>
 

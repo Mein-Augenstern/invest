@@ -3,6 +3,8 @@ import { ref } from 'vue'
 import { onShow, onPullDownRefresh } from '@dcloudio/uni-app'
 import { request, showApiError } from '@/api/client'
 import { ensureLogin } from '@/api/auth'
+import ErrorCard from '@/components/ErrorCard.vue'
+import EmptyCard from '@/components/EmptyState.vue'
 
 interface ValRow {
   name: string
@@ -18,6 +20,21 @@ interface ValRow {
 const loading = ref(true)
 const rows = ref<ValRow[]>([])
 const temperature = ref<number | null>(null)
+// 错误态 + 重试（ErrorCard）
+const loadError = ref(false)
+const errorMsg = ref('')
+const retrying = ref(false)
+const retry = async () => {
+  if (retrying.value) return
+  retrying.value = true
+  try {
+    await load()
+  } catch {
+    /* load 内部已置 loadError */
+  } finally {
+    retrying.value = false
+  }
+}
 // R8 自选指数：本地关注（storage 持久化），关注项置顶
 const starred = ref<Set<string>>(new Set())
 const STAR_KEY = 'invest_starred_indexes'
@@ -50,6 +67,7 @@ function sortRows() {
 
 async function load() {
   loading.value = true
+  loadError.value = false
   try {
     await ensureLogin()
     const d = await request<{ indexes: ValRow[]; temperature: number | null }>({ url: '/valuation' })
@@ -57,6 +75,8 @@ async function load() {
     temperature.value = d.temperature
     sortRows()
   } catch (e) {
+    loadError.value = true
+    errorMsg.value = e instanceof Error ? e.message : String(e)
     showApiError(e)
   } finally {
     loading.value = false
@@ -79,6 +99,11 @@ function tempLabel(): string {
   return '偏高'
 }
 
+/** 空态引导：去「我的」页手动拉数 */
+function goPull() {
+  uni.switchTab({ url: '/pages/settings/settings' })
+}
+
 loadStars()
 onPullDownRefresh(async () => {
   await load()
@@ -89,6 +114,9 @@ onShow(load)
 
 <template>
   <view class="page">
+    <!-- 加载失败（ErrorCard，可重试） -->
+    <ErrorCard :visible="loadError && !loading" title="加载失败" :description="errorMsg" :loading="retrying" @retry="retry" />
+
     <!-- R2 市场温度 -->
     <view v-if="temperature !== null" class="card temp-card">
       <view class="temp-left">
@@ -103,8 +131,8 @@ onShow(load)
       </view>
     </view>
 
-    <!-- R1 估值表 -->
-    <view class="card table-card">
+    <!-- R1 估值表（无数据时空态引导） -->
+    <view v-if="rows.length" class="card table-card">
       <view class="t-head">
         <text class="c-name">指数</text>
         <text class="c-num">PE</text>
@@ -130,6 +158,14 @@ onShow(load)
       </view>
       <view class="muted note">分位=当前 PE 在历史窗口内的位置（绿低红高，低买高卖参考）；口径见 docs/03。数据未齐时在设置页拉数。</view>
     </view>
+    <!-- 空态：暂无估值数据（EmptyState 引导拉数） -->
+    <EmptyCard
+      v-if="!rows.length && !loadError && !loading"
+      :visible="true"
+      message="暂无估值数据（估值口径见 docs/03，数据未齐时需先拉取）"
+      action-text="去拉数"
+      @action="goPull"
+    />
   </view>
 </template>
 

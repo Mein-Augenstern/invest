@@ -7,10 +7,28 @@ import { showApiError } from '@/api/client'
 import { ensureLogin } from '@/api/auth'
 import { fmtAmount, fmtSigned, fmtPct, pnlClass, fmtQty } from '@/utils/format'
 import type { HoldingDetail } from '@/types'
+import ErrorCard from '@/components/ErrorCard.vue'
+import EmptyCard from '@/components/EmptyState.vue'
 
 const d = ref<HoldingDetail | null>(null)
 const loading = ref(true)
 const instance = getCurrentInstance()
+// 错误态 + 重试（ErrorCard）：记录当前标的 id，重试时重新拉详情
+const currentId = ref('')
+const loadError = ref(false)
+const errorMsg = ref('')
+const retrying = ref(false)
+const retry = async () => {
+  if (retrying.value || !currentId.value) return
+  retrying.value = true
+  try {
+    await load(currentId.value)
+  } catch {
+    /* load 内部已置 loadError */
+  } finally {
+    retrying.value = false
+  }
+}
 // 十字线读数（P12）：canvas 内画竖线+点，具体数值渲染成下方文本（比 canvas 小字可读）
 const crossLabel = ref('')
 
@@ -24,13 +42,17 @@ const periodChange = computed(() => {
 })
 
 async function load(id: string) {
+  currentId.value = id
   loading.value = true
+  loadError.value = false
   try {
     await ensureLogin() // gateway 模式：等启动静默登录完成（单飞复用）
     d.value = await getInstrumentDetail(id)
     // 等渲染出 canvas 节点再画
     setTimeout(() => drawChart(), 300)
   } catch (e) {
+    loadError.value = true
+    errorMsg.value = e instanceof Error ? e.message : String(e)
     showApiError(e)
   } finally {
     loading.value = false
@@ -227,6 +249,11 @@ async function submitNav() {
   }
 }
 
+/** 空态引导：去「我的」页手动拉数 */
+function goPull() {
+  uni.switchTab({ url: '/pages/settings/settings' })
+}
+
 onLoad((q) => {
   if (q && q.id) load(String(q.id))
 })
@@ -234,6 +261,9 @@ onLoad((q) => {
 
 <template>
   <view class="page">
+    <!-- 加载失败（ErrorCard，可重试） -->
+    <ErrorCard :visible="loadError && !loading" title="加载失败" :description="errorMsg" :loading="retrying" @retry="retry" />
+
     <!-- 指标头 -->
     <view class="card">
       <view class="head">
@@ -267,8 +297,8 @@ onLoad((q) => {
       </view>
     </view>
 
-    <!-- 净值曲线 -->
-    <view class="card">
+    <!-- 净值曲线（有序列才渲染卡片，否则空态引导） -->
+    <view v-if="(d?.nav_series?.length || 0) >= 2" class="card">
       <view class="card-title">
         净值/行情曲线
         <text v-if="periodChange !== null" :class="['period', pnlClass(periodChange)]">
@@ -276,7 +306,6 @@ onLoad((q) => {
         </text>
       </view>
       <canvas
-        v-if="(d?.nav_series?.length || 0) >= 2"
         canvas-id="navChart"
         id="navChart"
         class="chart"
@@ -285,9 +314,16 @@ onLoad((q) => {
         @touchend="onChartTouchEnd"
       />
       <view v-if="crossLabel" class="cross-label">{{ crossLabel }}</view>
-      <view v-if="(d?.nav_series?.length || 0) >= 2" class="muted chart-hint">按住曲线可查看某日净值</view>
-      <view v-else class="muted no-chart">序列不足（需先拉数或录入净值，至少 2 个点）</view>
+      <view class="muted chart-hint">按住曲线可查看某日净值</view>
     </view>
+    <!-- 空态：净值/行情序列不足（EmptyState 引导拉数） -->
+    <EmptyCard
+      v-if="(d?.nav_series?.length || 0) < 2 && !loadError && !loading"
+      :visible="true"
+      message="暂无净值/行情序列（需先拉数或录入净值，至少 2 个点）"
+      action-text="去拉数"
+      @action="goPull"
+    />
 
     <!-- 基准估值 -->
     <view v-if="d?.benchmark" class="card">
@@ -423,11 +459,6 @@ onLoad((q) => {
 .chart-hint {
   font-size: 22rpx;
   margin-top: 4rpx;
-}
-.no-chart {
-  padding: 40rpx 0;
-  text-align: center;
-  font-size: 24rpx;
 }
 .kv {
   display: flex;

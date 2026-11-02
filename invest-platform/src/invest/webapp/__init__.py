@@ -91,9 +91,10 @@ def create_app(
 
     app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
-    from . import routes_api, routes_mp, routes_pages
+    from . import routes_api, routes_backup, routes_mp, routes_pages
 
     app.include_router(routes_pages.router)
     app.include_router(routes_api.router)
     app.include_router(routes_mp.router)
+    app.include_router(routes_backup.router, prefix="/api/invest")
     return app

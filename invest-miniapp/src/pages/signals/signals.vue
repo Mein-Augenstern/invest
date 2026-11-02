@@ -12,6 +12,7 @@ import {
 import { ApiError, request, showApiError } from '@/api/client'
 import { ensureLogin } from '@/api/auth'
 import { ACTION_LABELS } from '@/types'
+import ErrorCard from '@/components/ErrorCard.vue'
 
 /* ---------- 视图模型：S02 富格式优先，旧版（S02 前）字段兜底 ---------- */
 
@@ -97,6 +98,22 @@ const historyLoaded = ref(false)
 const expandedKeys = ref<Record<string, boolean>>({})
 const showStrategyInfo = ref(false)
 
+// 错误态 + 重试（ErrorCard；不影响 S02 信号/纸面交易逻辑）
+const loadError = ref(false)
+const errorMsg = ref('')
+const retrying = ref(false)
+const retry = async () => {
+  if (retrying.value) return
+  retrying.value = true
+  try {
+    await load()
+  } catch {
+    /* load 内部已置 loadError */
+  } finally {
+    retrying.value = false
+  }
+}
+
 /** 纸面交易列表：当前 + 去重合并历史，持仓中在前 */
 const paperList = computed<PaperTrade[]>(() => {
   const seen = new Set<string>()
@@ -145,12 +162,15 @@ async function onEvaluate() {
 
 async function load() {
   loading.value = true
+  loadError.value = false
   try {
     await ensureLogin() // gateway 模式：等启动静默登录完成（单飞复用）
     const d = await getSignals()
     signals.value = d.signals.map(toVM)
     paperTrades.value = d.paper_trades || []
   } catch (e) {
+    loadError.value = true
+    errorMsg.value = e instanceof Error ? e.message : String(e)
     showApiError(e)
   } finally {
     loading.value = false
@@ -251,9 +271,12 @@ onShow(load)
       <text class="info-btn" @tap="showStrategyInfo = true">ⓘ 策略说明</text>
     </view>
 
+    <!-- 加载失败（ErrorCard，可重试） -->
+    <ErrorCard :visible="loadError && !loading" title="加载失败" :description="errorMsg" :loading="retrying" @retry="retry" />
+
     <!-- Tab 1：当前信号 -->
     <block v-if="activeTab === 'signals'">
-      <view v-if="!signals.length && !loading" class="card empty">暂无信号。可在本机执行 invest signals 评估，或等待每日 cron。</view>
+      <view v-if="!signals.length && !loading && !loadError" class="card empty">暂无信号。可在本机执行 invest signals 评估，或等待每日 cron。</view>
 
       <view v-for="s in signals" :key="s.key" class="card sig-card">
         <view class="sig-head" @tap="toggleDetail(s)">
@@ -306,7 +329,7 @@ onShow(load)
 
     <!-- Tab 2：纸面交易 -->
     <block v-else>
-      <view v-if="!paperList.length && !loading" class="card empty">暂无纸面交易。确认信号后会自动开启纸面模拟跟踪（非真实交易）。</view>
+      <view v-if="!paperList.length && !loading && !loadError" class="card empty">暂无纸面交易。确认信号后会自动开启纸面模拟跟踪（非真实交易）。</view>
 
       <view v-for="t in paperList" :key="String(t.id)" class="card paper-card">
         <view class="paper-head">

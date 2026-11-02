@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { request, showApiError } from '@/api/client'
 import { ensureLogin } from '@/api/auth'
+import ErrorCard from '@/components/ErrorCard.vue'
 
 interface DiaryEntry {
   date: string
@@ -12,6 +13,21 @@ interface DiaryEntry {
 
 const entries = ref<DiaryEntry[]>([])
 const loading = ref(true)
+// 错误态 + 重试（ErrorCard）
+const loadError = ref(false)
+const errorMsg = ref('')
+const retrying = ref(false)
+const retry = async () => {
+  if (retrying.value) return
+  retrying.value = true
+  try {
+    await load()
+  } catch {
+    /* load 内部已置 loadError */
+  } finally {
+    retrying.value = false
+  }
+}
 const showForm = ref(false)
 const editing = ref(false)
 const form = ref({ date: new Date().toISOString().slice(0, 10), content: '', mood: '' })
@@ -28,11 +44,14 @@ const MOOD_CLASS: Record<string, string> = {
 
 async function load() {
   loading.value = true
+  loadError.value = false
   try {
     await ensureLogin()
     const d = await request<{ entries: DiaryEntry[] }>({ url: '/diary' })
     entries.value = d.entries
   } catch (e) {
+    loadError.value = true
+    errorMsg.value = e instanceof Error ? e.message : String(e)
     showApiError(e)
   } finally {
     loading.value = false
@@ -101,7 +120,10 @@ onShow(load)
       <button class="primary-btn block" @tap="onNew">写一篇</button>
     </view>
 
-    <view v-if="!entries.length && !loading" class="card empty">还没有日记。任何一天都值得记一笔。</view>
+    <!-- 加载失败（ErrorCard，可重试） -->
+    <ErrorCard :visible="loadError && !loading" title="加载失败" :description="errorMsg" :loading="retrying" @retry="retry" />
+
+    <view v-if="!entries.length && !loading && !loadError" class="card empty">还没有日记。任何一天都值得记一笔。</view>
 
     <view v-for="e in entries" :key="e.date" class="card" @tap="onEdit(e)">
       <view class="e-head">

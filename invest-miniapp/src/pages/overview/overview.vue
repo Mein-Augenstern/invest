@@ -5,7 +5,15 @@ import { getOverview, startPull, getPullStatus } from '@/api/invest'
 import { showApiError } from '@/api/client'
 import { ensureLogin } from '@/api/auth'
 import { fmtAmount, fmtSigned, fmtPct, pnlClass, fmtQty } from '@/utils/format'
+import { isOnboarded } from '@/api/config'
 import type { Overview } from '@/types'
+import Onboarding from '@/components/Onboarding.vue'
+import ExampleBanner from '@/components/ExampleBanner.vue'
+
+// S08 首次启动引导
+const showOnboarding = ref(!isOnboarded())
+const onboardingNavigate = (page: string) => { uni.navigateTo({ url: page }) }
+const onboardingClose = () => { showOnboarding.value = false }
 
 const loading = ref(true)
 const data = ref<Overview | null>(null)
@@ -189,6 +197,10 @@ load()
 
 <template>
   <view class="page">
+    <!-- S08 首次启动引导（三步滑动） -->
+    <Onboarding :visible="showOnboarding" @close="onboardingClose" @navigate="onboardingNavigate" />
+    <!-- S08 示例数据横幅 -->
+    <ExampleBanner :visible="!!data?.is_example" @navigate="onboardingNavigate" />
     <!-- 组合总卡 -->
     <view class="card">
       <view class="card-title">总市值（{{ data?.date || '—' }}）</view>

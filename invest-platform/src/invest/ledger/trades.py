@@ -11,12 +11,15 @@ from __future__ import annotations
 import csv
 import io
 import os
+import logging
 import threading
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
 ACTIONS = {"buy", "sell", "dividend_cash", "dividend_reinvest", "adjust", "contribute"}
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -47,23 +50,32 @@ class Trade:
 
 
 def load_trades(path: Path) -> list[Trade]:
+    """加载流水 CSV——行级容错（S04-AC2）：损坏行跳过并 warn，不阻断整体加载。"""
     p = Path(path)
     if not p.exists():
         return []
     trades: list[Trade] = []
+    skipped = 0
     with open(p, newline="", encoding="utf-8-sig") as f:
-        for row in csv.DictReader(f):
-            trades.append(
-                Trade(
-                    date=row["date"].strip(),
-                    instrument_id=row["instrument_id"].strip(),
-                    action=row["action"].strip(),
-                    quantity=float(row["quantity"]),
-                    price=float(row["price"]),
-                    fee=float(row.get("fee") or 0),
-                    note=(row.get("note") or "").strip(),
+        reader = csv.DictReader(f)
+        for lineno, row in enumerate(reader, start=2):  # 行号从 2 起（1=表头）
+            try:
+                trades.append(
+                    Trade(
+                        date=(row.get("date") or "").strip(),
+                        instrument_id=(row.get("instrument_id") or "").strip(),
+                        action=(row.get("action") or "").strip(),
+                        quantity=float(row.get("quantity") or ""),
+                        price=float(row.get("price") or ""),
+                        fee=float(row.get("fee") or 0),
+                        note=(row.get("note") or "").strip(),
+                    )
                 )
-            )
+            except (ValueError, TypeError, KeyError) as e:
+                skipped += 1
+                logger.warning("trades.csv 第 %d 行损坏已跳过: %s（原始: %s）", lineno, e, row)
+    if skipped:
+        logger.warning("trades.csv 加载完成：正常 %d 行，跳过损坏 %d 行", len(trades), skipped)
     return trades
 
 

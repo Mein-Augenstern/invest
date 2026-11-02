@@ -4,6 +4,7 @@ import { onShow } from '@dcloudio/uni-app'
 import { request, showApiError } from '@/api/client'
 import { ensureLogin } from '@/api/auth'
 import { fmtAmount, fmtSigned, pnlClass } from '@/utils/format'
+import ErrorCard from '@/components/ErrorCard.vue'
 
 interface Annual {
   year: string
@@ -30,13 +31,31 @@ const years = computed(() => {
 const year = ref(String(new Date().getFullYear()))
 const data = ref<Annual | null>(null)
 const loading = ref(true)
+// 错误态 + 重试（ErrorCard）
+const loadError = ref(false)
+const errorMsg = ref('')
+const retrying = ref(false)
+const retry = async () => {
+  if (retrying.value) return
+  retrying.value = true
+  try {
+    await load()
+  } catch {
+    /* load 内部已置 loadError */
+  } finally {
+    retrying.value = false
+  }
+}
 
 async function load() {
   loading.value = true
+  loadError.value = false
   try {
     await ensureLogin()
     data.value = await request<Annual>({ url: '/annual-report', params: { year: year.value } })
   } catch (e) {
+    loadError.value = true
+    errorMsg.value = e instanceof Error ? e.message : String(e)
     showApiError(e)
   } finally {
     loading.value = false
@@ -69,6 +88,9 @@ onShow(load)
         @tap="switchYear(y)"
       >{{ y }}</text>
     </view>
+
+    <!-- 加载失败（ErrorCard，可重试） -->
+    <ErrorCard :visible="loadError && !loading" title="加载失败" :description="errorMsg" :loading="retrying" @retry="retry" />
 
     <view v-if="data && !data.empty" class="page">
       <view class="card hero">
