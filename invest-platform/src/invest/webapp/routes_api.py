@@ -84,6 +84,14 @@ def pull_status() -> dict:
     return pulljob.status()
 
 
+@router.get("/schedule/status")
+def schedule_status(data_dir=Depends(get_data_dir)) -> dict:
+    """S09：定时拉数状态（开关/下次触发/分布式锁/最近一次执行）。"""
+    from ..scheduler.pull_job import status as schedule_status_payload
+
+    return schedule_status_payload(data_dir)
+
+
 @router.post("/reports/generate")
 def generate_report(
     payload: dict = Body(default={}),

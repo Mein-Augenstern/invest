@@ -1,6 +1,9 @@
 """手动拉数后台任务：内存单句柄 + 状态轮询（单用户，无需任务队列）。
 
 拉数是分钟级网络任务，同步等待必然超时——接口只负责"触发"，前端轮询 status。
+S09 起"拉数+评估"核心下沉到 scheduler.pull_job.pull_and_evaluate（与定时任务
+共用），store 走 default_store：本地 SQLite / 部署 MySQL 随环境（修掉旧实现
+硬编码 LocalStore、MySQL 部署下拉数写错库的问题）。
 """
 from __future__ import annotations
 
@@ -39,31 +42,17 @@ def start_pull(data_dir, config_path) -> tuple[bool, str]:
 
 
 def _run(data_dir, config_path) -> None:
-    # 局部导入便于测试 monkeypatch invest.pipeline.run_pull
+    # 局部导入便于测试 monkeypatch invest.pipeline.run_pull / invest.reporting.evaluate_and_store_signals
     try:
-        from pathlib import Path
-
-        from ..portfolio import load_portfolio
-        from ..data.akshare_provider import AkshareProvider
-        from ..data.local import LocalStore
-        from ..pipeline import run_pull
+        from ..data.mysql_store import default_store
+        from ..scheduler.pull_job import pull_and_evaluate
 
         def log(msg: str) -> None:
             with _lock:
                 _job.log.append(f"{time.strftime('%H:%M:%S')} {msg}")
 
-        conf = load_portfolio(LocalStore(Path(data_dir) / "invest.db"), config_path)
-        store = LocalStore(Path(data_dir) / "invest.db")
-        run_pull(conf, store, AkshareProvider(), log=log)
-        # S4：拉数成功即评估信号（纪律链闭环：数据新鲜→信号新鲜，不依赖本机 cron）
-        try:
-            from ..ledger.trades import load_trades as _lt
-            from ..reporting import evaluate_and_store_signals as _ev
-
-            new_count = _ev(conf, store, _lt(Path(data_dir) / "trades.csv"))
-            log(f"[OK] 信号评估完成（新增 {new_count} 条）")
-        except Exception as e:  # noqa: BLE001 - 评估失败不影响拉数结果
-            log(f"[WARN] 拉数后信号评估失败: {type(e).__name__}")
+        # default_store：本地 SQLite / 部署 MySQL（INVEST_DB_URL），与读路径同库
+        pull_and_evaluate(data_dir, config_path, default_store(data_dir), log=log)
         with _lock:
             _job.status = "done"
     except Exception as e:  # noqa: BLE001 - 失败可见

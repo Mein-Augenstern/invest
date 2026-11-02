@@ -23,6 +23,47 @@ from .deps import get_conf, get_data_dir, get_store, get_trades_path
 
 router = APIRouter(prefix="/api/invest")
 
+#: S09-AC4 自动补拉的进程级限频状态（30 分钟内最多一次；{"last_at": monotonic 秒}）
+_AUTO_PULL_STATE = {"last_at": 0.0}
+
+
+def _any_series_stale(conf, store) -> bool:
+    """任一标的序列超过 STALE_THRESHOLD(6h) 未刷新 → 数据过期（S05 同口径）。"""
+    from ..config import series_kind
+    from ..data.resilient_provider import is_stale
+
+    return any(
+        ins.code
+        and (u := store.series_updated_at(ins.code, series_kind(ins.type)))
+        and is_stale(u)
+        for ins in conf.instruments
+    )
+
+
+def _maybe_autopull_on_stale(conf, store, request) -> bool:
+    """S09-AC4：数据过期时后台自动补拉（fire-and-forget，不阻塞本次响应）。
+
+    门控：部署形态（INVEST_DB_URL=mysql://）默认开，本地默认关（避免本机意外
+    打 akshare），可用 INVEST_AUTOPULL_ON_STALE=1/0 显式覆盖；同进程 30 分钟内
+    最多触发一次；已有任务在跑时 start_pull 自然拒绝。
+    """
+    import os
+    import time
+
+    default = "1" if os.environ.get("INVEST_DB_URL", "").startswith("mysql://") else "0"
+    if os.environ.get("INVEST_AUTOPULL_ON_STALE", default) != "1":
+        return False
+    if time.monotonic() - _AUTO_PULL_STATE["last_at"] < 1800:
+        return False
+    if not _any_series_stale(conf, store):
+        return False
+    from . import pulljob
+
+    ok, _ = pulljob.start_pull(request.app.state.data_dir, request.app.state.config_path)
+    if ok:
+        _AUTO_PULL_STATE["last_at"] = time.monotonic()
+    return ok
+
 
 def _r2(x: float | None) -> float | None:
     return None if x is None else round(x, 2)
@@ -59,11 +100,39 @@ def mp_ping() -> dict:
     return {"ok": True, "service": "invest-mp"}
 
 
+def _maybe_autopull_on_stale(conf, store, request) -> bool:
+    """S09-AC4：数据过期时后台自动补拉（fire-and-forget，不阻塞本次响应）。
+
+    门控：部署形态（INVEST_DB_URL=mysql://）默认开，本地默认关（避免本机意外
+    打 akshare），可用 INVEST_AUTOPULL_ON_STALE=1/0 显式覆盖；同进程 30 分钟内
+    最多触发一次；已有任务在跑时 start_pull 自然拒绝。
+    """
+    import os
+    import time
+
+    default = "1" if os.environ.get("INVEST_DB_URL", "").startswith("mysql://") else "0"
+    if os.environ.get("INVEST_AUTOPULL_ON_STALE", default) != "1":
+        return False
+    if time.monotonic() - _AUTO_PULL_STATE["last_at"] < 1800:
+        return False
+    if not _any_series_stale(conf, store):
+        return False
+    from . import pulljob
+
+    ok, _ = pulljob.start_pull(request.app.state.data_dir, request.app.state.config_path)
+    if ok:
+        _AUTO_PULL_STATE["last_at"] = time.monotonic()
+    return ok
+
+
 @router.get("/overview")
-def overview(conf=Depends(get_conf), store=Depends(get_store), trades_path=Depends(get_trades_path)) -> dict:
+def overview(request: Request, conf=Depends(get_conf), store=Depends(get_store),
+             trades_path=Depends(get_trades_path)) -> dict:
     """总览：组合汇总 + 按品类分组持仓 + 基准估值 + 近期信号。"""
     trades = load_trades(trades_path)
     view = build_portfolio_view(conf, store, trades)
+    # S09-AC4：数据过期时后台自动补拉（不阻塞渲染；门控/限频见函数 docstring）
+    _maybe_autopull_on_stale(conf, store, request)
     name_of = {i.id: i.name for i in conf.instruments}
 
     groups: dict[str, dict] = {}
@@ -108,6 +177,7 @@ def overview(conf=Depends(get_conf), store=Depends(get_store), trades_path=Depen
         "date": view.date,
         "config_source": view.config_source,
         "is_example": view.is_example_config,
+        "data_stale": _any_series_stale(conf, store),  # S09-AC4：前端"数据延迟"角标
         "totals": {
             "market_value": _r2(view.total_market_value),
             "unrealized": _r2(view.total_unrealized),

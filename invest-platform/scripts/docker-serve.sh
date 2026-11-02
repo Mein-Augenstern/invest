@@ -37,6 +37,13 @@ else
   echo "警告：WX_MP_SECRET 未配置——member 走 mock 通道（每次登录新 memberId，数据不归一）" >&2
 fi
 
+# S09 定时拉数：两容器都到点争锁，starsite_lock 表保证恰一执行（默认开，可
+# INVEST_SCHEDULE=0 关）；过期自动补拉随部署形态默认开（INVEST_DB_URL=mysql://）
+SCHEDULE_ARG=(-e INVEST_SCHEDULE="${INVEST_SCHEDULE:-1}")
+if [ "${INVEST_SCHEDULE:-1}" = "1" ]; then
+  echo "S09 定时拉数：每天 ${INVEST_PULL_HOUR:-20}:${INVEST_PULL_MINUTE:-0}（双容器争锁恰一执行）"
+fi
+
 NET="docker_default"
 IMAGE="star-site/platform-invest:latest"
 DATA_DIR="$(pwd)/data"
@@ -57,6 +64,7 @@ docker run -d --name star-invest-star --network "$NET" --restart unless-stopped 
   -e INVEST_HOSTS_EXTRA=star-invest-star,127.0.0.1,localhost \
   -e INVEST_DB_URL="$CONTAINER_DB_URL" \
   -e INVEST_DATA_DIR=/data \
+  ${SCHEDULE_ARG[@]+"${SCHEDULE_ARG[@]}"} \
   ${WX_MP_SECRET_ARG[@]+"${WX_MP_SECRET_ARG[@]}"} \
   -v "$DATA_DIR:/data" \
   -v "$(pwd)/config:/app/config:ro" \
@@ -72,6 +80,7 @@ docker run -d --name star-invest-lan --network "$NET" --restart unless-stopped \
   -e INVEST_MP_TOKEN="$INVEST_LAN_TOKEN" \
   -e INVEST_DB_URL="$CONTAINER_DB_URL" \
   -e INVEST_DATA_DIR=/data \
+  ${SCHEDULE_ARG[@]+"${SCHEDULE_ARG[@]}"} \
   -v "$DATA_DIR:/data" \
   -v "$(pwd)/config:/app/config:ro" \
   "$IMAGE" \

@@ -3,9 +3,15 @@
 create_app() 工厂：路径可注入（测试用 tmp 目录）、Host 白名单可配置。
 分层铁律：webapp 内只调 reporting/领域层，禁止直接 import pandas/metrics/ledger 做计算。
 路由一律同步 def（pandas 计算由 FastAPI 丢线程池，避免卡事件循环）。
+
+S09：INVEST_SCHEDULE=1 时在 lifespan 启动每日定时拉数循环（分布式锁恰一执行）。
 """
 from __future__ import annotations
 
+import asyncio
+import contextlib
+import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -64,6 +70,21 @@ def _asset(path: str) -> str:
 templates.env.filters["asset"] = _asset
 
 
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    """S09：环境变量门控的定时拉数循环（默认关；部署侧 docker-serve.sh 开）。"""
+    task = None
+    if os.environ.get("INVEST_SCHEDULE", "").lower() in ("1", "true", "yes", "on"):
+        from ..scheduler.pull_job import schedule_loop
+
+        task = asyncio.create_task(schedule_loop(app))
+    yield
+    if task is not None:
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+
+
 def create_app(
     allowed_hosts: set[str] | None = None,
     config_path: Path | None = None,
@@ -71,7 +92,8 @@ def create_app(
     mp_token: str | None = None,
     auth_mode: str | None = None,
 ) -> FastAPI:
-    app = FastAPI(title="invest · 个人投资管理平台", docs_url=None, redoc_url=None, openapi_url=None)
+    app = FastAPI(title="invest · 个人投资管理平台", docs_url=None, redoc_url=None,
+                  openapi_url=None, lifespan=_lifespan)
     app.state.allowed_hosts = allowed_hosts if allowed_hosts is not None else set(DEFAULT_HOSTS)
     app.state.config_path = config_path  # None → load_config 默认(local.yaml优先)
     app.state.data_dir = data_dir if data_dir is not None else cfg.DATA_DIR
