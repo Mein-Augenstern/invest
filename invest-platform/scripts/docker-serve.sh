@@ -39,9 +39,10 @@ fi
 
 # S09 定时拉数：两容器都到点争锁，starsite_lock 表保证恰一执行（默认开，可
 # INVEST_SCHEDULE=0 关）；过期自动补拉随部署形态默认开（INVEST_DB_URL=mysql://）
-SCHEDULE_ARG=(-e INVEST_SCHEDULE="${INVEST_SCHEDULE:-1}")
+# TZ=Asia/Shanghai：容器默认 UTC，会把 20:00 变成北京时间凌晨 4 点（实证踩坑）
+SCHEDULE_ARG=(-e INVEST_SCHEDULE="${INVEST_SCHEDULE:-1}" -e TZ=Asia/Shanghai)
 if [ "${INVEST_SCHEDULE:-1}" = "1" ]; then
-  echo "S09 定时拉数：每天 ${INVEST_PULL_HOUR:-20}:${INVEST_PULL_MINUTE:-0}（双容器争锁恰一执行）"
+  echo "S09 定时拉数：每天 ${INVEST_PULL_HOUR:-20}:$(printf '%02d' "${INVEST_PULL_MINUTE:-0}")（双容器争锁恰一执行）"
 fi
 
 NET="docker_default"

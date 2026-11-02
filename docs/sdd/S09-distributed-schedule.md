@@ -100,3 +100,6 @@
   跨实例并发手动拉数数据面幂等（REPLACE INTO），可容忍
 - 锁表时间戳为微秒 ISO 字符串（VARCHAR）：与 Java starsite-lock 组件表语义
   对齐但物理不互通（Java 侧 DATETIME）——如需互通需统一时间戳类型
+- **时区双层防线（2026-11-02 实证）**：容器默认 UTC，`hour=20` 会变成北京时间
+  凌晨 4 点——docker-serve.sh 注入 `TZ=Asia/Shanghai`（对齐全容器时间戳），
+  且调度代码用 `_now_cn()`（ZoneInfo 北京时间）算触发点，与时区环境解耦

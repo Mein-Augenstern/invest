@@ -101,6 +101,16 @@ def run_pull_once(data_dir, config_path, *, holder: str = "", ttl_minutes: float
             log("[WARN] 释放锁失败（锁可能已被 TTL 接管）")
 
 
+def _now_cn() -> datetime:
+    """触发计算用北京时间（产品语义：A股/基金日级周期；TZ 缺 tzdata 时退本地钟）。"""
+    try:
+        from zoneinfo import ZoneInfo
+
+        return datetime.now(ZoneInfo("Asia/Shanghai"))
+    except Exception:  # noqa: BLE001 - 镜像无 tzdata 时退化为容器本地时钟
+        return datetime.now()
+
+
 def next_run_at(now: datetime, hour: int, minute: int) -> datetime:
     """下一个触发时刻（今天未到 = 今天，否则明天）。纯函数可测。"""
     target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
@@ -123,9 +133,10 @@ def schedule_enabled() -> bool:
 async def schedule_loop(app) -> None:
     """每日循环（lifespan 内 create_task）：睡到触发点 → 线程池执行（拉数是同步网络 IO）。"""
     hour, minute, ttl = _cron_from_env()
-    logger.info("定时拉数已启用：每天 %02d:%02d（锁 %s，TTL %gmin）", hour, minute, LOCK_NAME, ttl)
+    logger.info("定时拉数已启用：每天 %02d:%02d 北京时间（锁 %s，TTL %gmin）", hour, minute, LOCK_NAME, ttl)
     while True:
-        delay = (next_run_at(datetime.now(), hour, minute) - datetime.now()).total_seconds()
+        now = _now_cn()
+        delay = (next_run_at(now, hour, minute) - now).total_seconds()
         await asyncio.sleep(max(1.0, delay))
         try:
             await asyncio.to_thread(run_pull_once, app.state.data_dir,
@@ -143,7 +154,7 @@ def status(data_dir) -> dict:
     return {
         "enabled": schedule_enabled(),
         "cron": f"{hour:02d}:{minute:02d}",
-        "next_run": next_run_at(datetime.now(), hour, minute).isoformat(timespec="seconds"),
+        "next_run": next_run_at(_now_cn(), hour, minute).isoformat(timespec="seconds"),
         "lock": _lock_dict(st),
         "last_run": dict(last_run),
     }
