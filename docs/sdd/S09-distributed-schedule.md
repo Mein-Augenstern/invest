@@ -1,7 +1,20 @@
 # S09 · 分布式定时拉数（Spec）
 
-> 优先级 P0 · 状态：**已实现（2026-11-02，tests/test_s09_scheduler.py 15/15，全量 169/169）**
+> 优先级 P0 · 状态：**已实现+生产验收通过（2026-11-06，双容器三晚实证）**
 > 原则：分布式场景下定时任务恰一执行；数据自动新鲜；信号自动评估。
+
+## 生产验收记录（2026-11-06，证据留存）
+
+11/3、11/4、11/5 三晚 20:00 定时触发实证（部署自 11/2 晚）：
+
+| AC | 证据 | 结果 |
+|---|---|---|
+| AC-1 恰一执行 | `starsite_lock` 行 `sch:invest:pull` hold_count=4（首建+3 晚恰好吻合）；赢家 star 容器（4ae5ec032580）持锁执行，lan 容器 status 端点 `ran=false, reason="lock held by 4ae5ec032580:62"` | ✅ |
+| AC-3 自动评估 | 赢家 last_run `ran=true, duration=71.3s, evaluated=0`；signals 表历史总量=0 与手动拉数时代一致——机制在跑、策略未命中属语义 | ✅ |
+| AC-1 数据不重复 | series 每晚 `20:00:50~20:01:11` 刷新，last_date=当日最新净值 | ✅ |
+| AC-5 留痕 | **发现静默 bug**：容器内 root logger 默认 WARNING 吞 INFO，三晚日志零字节——修复：pull_job 模块级给 invest 命名空间挂 handler 抬 INFO（重部署后启动日志即出"定时拉数已启用"实证） | ✅（修复后） |
+| AC-2 崩溃接管 | 无自然崩溃样本；TTL 接管由 15 项单测覆盖（force_expire 模拟） | ✅（测试级） |
+
 
 ## Problem
 

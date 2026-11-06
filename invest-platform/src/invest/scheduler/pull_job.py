@@ -23,6 +23,16 @@ from .distributed_lock import DistributedLock, LockState, default_holder
 
 logger = logging.getLogger(__name__)
 
+# AC-5 可观测性（2026-11-06 生产验收发现的静默 bug）：容器内无 logging 配置，
+# root logger 默认 WARNING 会吞掉全部 INFO——定时拉数的执行痕迹（LOCK/SKIP/DONE）
+# 三晚一个字节都没落日志。给 invest 命名空间挂 StreamHandler 并抬到 INFO
+# （幂等：已配置过则不动；root 无 handler 故不会重复输出）。
+if not logging.getLogger("invest").handlers:
+    _handler = logging.StreamHandler()
+    _handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s"))
+    logging.getLogger("invest").addHandler(_handler)
+logging.getLogger("invest").setLevel(logging.INFO)
+
 #: 全平台拉数锁名——双语言协议规范 sch:<app>:<task>（与 Java starsite-schedule 组件
 #: 同规范共存于同一 MySQL，可互相观测；Java 侧锁名见组件 LOCK_PREFIX）
 LOCK_NAME = "sch:invest:pull"
