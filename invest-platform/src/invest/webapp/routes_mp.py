@@ -57,9 +57,14 @@ def _maybe_autopull_on_stale(conf, store, request) -> bool:
         return False
     if not _any_series_stale(conf, store):
         return False
+    import invest.webapp.pulljob as _pj_mod
+    print(f"[DIAG2] stale ok → patch_id={id(_pj_mod.start_pull) % 10000} "
+          f"module={_pj_mod.__name__} start_pull_id={id(pulljob.start_pull) % 10000 if False else 'n/a'}")
     from . import pulljob
 
+    print(f"[DIAG2] calling start_pull, is_patched={pulljob.start_pull.__module__}")
     ok, _ = pulljob.start_pull(request.app.state.data_dir, request.app.state.config_path)
+    print(f"[DIAG2] start_pull returned ok={ok}")
     if ok:
         _AUTO_PULL_STATE["last_at"] = time.monotonic()
     return ok
@@ -117,9 +122,14 @@ def _maybe_autopull_on_stale(conf, store, request) -> bool:
         return False
     if not _any_series_stale(conf, store):
         return False
+    import invest.webapp.pulljob as _pj_mod
+    print(f"[DIAG2] stale ok → patch_id={id(_pj_mod.start_pull) % 10000} "
+          f"module={_pj_mod.__name__} start_pull_id={id(pulljob.start_pull) % 10000 if False else 'n/a'}")
     from . import pulljob
 
+    print(f"[DIAG2] calling start_pull, is_patched={pulljob.start_pull.__module__}")
     ok, _ = pulljob.start_pull(request.app.state.data_dir, request.app.state.config_path)
+    print(f"[DIAG2] start_pull returned ok={ok}")
     if ok:
         _AUTO_PULL_STATE["last_at"] = time.monotonic()
     return ok
