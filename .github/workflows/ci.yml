@@ -1,0 +1,29 @@
+name: CI
+
+# 质量门：pytest 全绿（169 项，2026-11-07 基线）。
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: invest-platform
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Sync dependencies (dev group)
+        run: uv sync --group dev
+
+      - name: Run tests
+        run: uv run pytest -q
