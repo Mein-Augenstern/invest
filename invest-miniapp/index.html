@@ -15,12 +15,19 @@
          两侧暗色；transform 使页面内 fixed 元素（fab/弹窗）以列包含块定位。
          手机端（<768px）完全不受影响。 */
       @media screen and (min-width: 768px) {
-        html, body { background: #101014 !important; }
+        /* 浅色桌面：与暗色手机列强对比，一眼区分"手机屏"与"桌面" */
+        html, body { background: #e9ebef !important; }
         uni-app, uni-page, uni-page-wrapper, uni-page-body {
           max-width: 420px !important;
           margin-left: auto !important;
           margin-right: auto !important;
-          background: #101014 !important;
+        }
+        /* 手机机身：白底 + 阴影 + 顶部圆角（手机屏浮在桌面） */
+        uni-app {
+          background: #fff !important;
+          box-shadow: 0 16px 60px rgba(0, 0, 0, .22), 0 0 0 1px rgba(0, 0, 0, .08) !important;
+          min-height: 100vh !important;
+          border-radius: 18px 18px 0 0 !important;
         }
         uni-page-wrapper { transform: translateZ(0); }
         uni-tabbar, .uni-tabbar {
