@@ -50,31 +50,20 @@ def _maybe_autopull_on_stale(conf, store, request) -> bool:
     import os
     import time
 
-    import logging as _lg
-    _lg.getLogger(__name__).warning("[DIAG3] enter env=%r dburl=%r last_at=%r",
-        os.environ.get("INVEST_AUTOPULL_ON_STALE"), os.environ.get("INVEST_DB_URL"),
-        _AUTO_PULL_STATE["last_at"])
     default = "1" if os.environ.get("INVEST_DB_URL", "").startswith("mysql://") else "0"
     if os.environ.get("INVEST_AUTOPULL_ON_STALE", default) != "1":
-        _lg.getLogger(__name__).warning("[DIAG3] return: env gate")
         return False
-    if time.monotonic() - _AUTO_PULL_STATE["last_at"] < 1800:
-        _lg.getLogger(__name__).warning("[DIAG3] return: rate limit")
+    # 限频用 wall clock：monotonic 起点不定，fresh 进程 last_at=0.0 会被
+    # 误判限频 30 分钟——2026-11-07 CI Linux runner 实证，mac 长跑进程掩盖
+    if time.time() - _AUTO_PULL_STATE["last_at"] < 1800:
         return False
     if not _any_series_stale(conf, store):
-        _lg.getLogger(__name__).warning("[DIAG3] return: not stale")
         return False
-    _lg.getLogger(__name__).warning("[DIAG3] PASS all gates, calling start_pull")
-    import invest.webapp.pulljob as _pj_mod
-    print(f"[DIAG2] stale ok → patch_id={id(_pj_mod.start_pull) % 10000} "
-          f"module={_pj_mod.__name__} start_pull_id={id(pulljob.start_pull) % 10000 if False else 'n/a'}")
     from . import pulljob
 
-    print(f"[DIAG2] calling start_pull, is_patched={pulljob.start_pull.__module__}")
     ok, _ = pulljob.start_pull(request.app.state.data_dir, request.app.state.config_path)
-    print(f"[DIAG2] start_pull returned ok={ok}")
     if ok:
-        _AUTO_PULL_STATE["last_at"] = time.monotonic()
+        _AUTO_PULL_STATE["last_at"] = time.time()
     return ok
 
 
@@ -123,31 +112,20 @@ def _maybe_autopull_on_stale(conf, store, request) -> bool:
     import os
     import time
 
-    import logging as _lg
-    _lg.getLogger(__name__).warning("[DIAG3] enter env=%r dburl=%r last_at=%r",
-        os.environ.get("INVEST_AUTOPULL_ON_STALE"), os.environ.get("INVEST_DB_URL"),
-        _AUTO_PULL_STATE["last_at"])
     default = "1" if os.environ.get("INVEST_DB_URL", "").startswith("mysql://") else "0"
     if os.environ.get("INVEST_AUTOPULL_ON_STALE", default) != "1":
-        _lg.getLogger(__name__).warning("[DIAG3] return: env gate")
         return False
-    if time.monotonic() - _AUTO_PULL_STATE["last_at"] < 1800:
-        _lg.getLogger(__name__).warning("[DIAG3] return: rate limit")
+    # 限频用 wall clock：monotonic 起点不定，fresh 进程 last_at=0.0 会被
+    # 误判限频 30 分钟——2026-11-07 CI Linux runner 实证，mac 长跑进程掩盖
+    if time.time() - _AUTO_PULL_STATE["last_at"] < 1800:
         return False
     if not _any_series_stale(conf, store):
-        _lg.getLogger(__name__).warning("[DIAG3] return: not stale")
         return False
-    _lg.getLogger(__name__).warning("[DIAG3] PASS all gates, calling start_pull")
-    import invest.webapp.pulljob as _pj_mod
-    print(f"[DIAG2] stale ok → patch_id={id(_pj_mod.start_pull) % 10000} "
-          f"module={_pj_mod.__name__} start_pull_id={id(pulljob.start_pull) % 10000 if False else 'n/a'}")
     from . import pulljob
 
-    print(f"[DIAG2] calling start_pull, is_patched={pulljob.start_pull.__module__}")
     ok, _ = pulljob.start_pull(request.app.state.data_dir, request.app.state.config_path)
-    print(f"[DIAG2] start_pull returned ok={ok}")
     if ok:
-        _AUTO_PULL_STATE["last_at"] = time.monotonic()
+        _AUTO_PULL_STATE["last_at"] = time.time()
     return ok
 
 
