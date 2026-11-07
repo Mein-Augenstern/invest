@@ -178,6 +178,28 @@ def append_trade(trades_path: Path, t: dict) -> None:
             w.writerow({k: t.get(k, "") for k in COLUMNS})
 
 
+#: 数值列：删除匹配时按 float 比较（CSV 落盘格式化 "100.00" vs 前端数字 100
+#: 的字符串不等——用户长按删除永远 409 的根因，2026-11-07 H5 动线测试实证）
+NUM_COLS = {"quantity", "price", "fee"}
+
+
+def _row_matches(r: dict, row: dict) -> bool:
+    """单行匹配：数值列容差比较，其余列字符串比较。"""
+    for k in COLUMNS:
+        expected = str(row.get(k, ""))
+        actual = r.get(k) or ""
+        if k in NUM_COLS and expected and actual:
+            try:
+                if float(actual) != float(expected):
+                    return False
+                continue
+            except ValueError:
+                pass
+        if actual != expected:
+            return False
+    return True
+
+
 def delete_trade(trades_path: Path, row: dict) -> bool:
     """按整行内容匹配删除（临时文件+原子替换）；不匹配返回 False。"""
     with _WRITE_LOCK:
@@ -186,7 +208,7 @@ def delete_trade(trades_path: Path, row: dict) -> bool:
             return False
         with open(trades_path, newline="", encoding="utf-8-sig") as f:
             rows = list(csv.DictReader(f))
-        keep = [r for r in rows if any((r.get(k) or "") != str(row.get(k, "")) for k in COLUMNS)]
+        keep = [r for r in rows if not _row_matches(r, row)]
         if len(keep) == len(rows):
             return False
         # 序列化在内存 StringIO 完成，落盘用 Path.write_text + os.replace

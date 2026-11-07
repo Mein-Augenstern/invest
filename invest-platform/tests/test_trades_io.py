@@ -69,3 +69,18 @@ def test_save_validated_trade_rejects_and_appends(tmp_path):
     )
     assert bad is None and "赎回超过持仓" in err
     assert len(load_trades(path)) == 1
+
+
+def test_delete_trade_numeric_format_tolerance(tmp_path):
+    """CSV 落盘格式化值（100.00）vs 前端数字（100）的删除匹配——H5 动线测试实证 bug。"""
+    from invest.ledger.trades import append_trade, delete_trade
+    csv_p = tmp_path / "trades.csv"
+    append_trade(csv_p, {"date": "2026-11-07", "instrument_id": "etf", "action": "buy",
+                         "quantity": "100.00", "price": "0.7080", "fee": "", "note": ""})
+    # 前端传数字（JSON 序列化后 str 为 "100"/"0.708"）——float 容差匹配应命中
+    assert delete_trade(csv_p, {"date": "2026-11-07", "instrument_id": "etf", "action": "buy",
+                                "quantity": 100, "price": 0.708, "fee": "", "note": ""})
+    assert "etf" not in csv_p.read_text()
+    # 再删一次（已不在）→ False
+    assert not delete_trade(csv_p, {"date": "2026-11-07", "instrument_id": "etf", "action": "buy",
+                                    "quantity": 100, "price": 0.708})
