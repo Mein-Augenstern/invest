@@ -85,12 +85,27 @@ let chartGeom: {
 function drawChart(crossTs?: number) {
   const series = d.value?.nav_series || []
   if (series.length < 2) return
-  const ctx = uni.createCanvasContext('navChart', instance?.proxy)
-  // canvas css 尺寸为 686×420 rpx，按屏宽换算逻辑像素，避免不同机型拉伸
-  // 新基础库用 getWindowInfo（getSystemInfoSync 已废弃告警）
+  // 画布尺寸自适应容器实际宽度：手机屏按 rpx 换算；PC 手机列（限宽 420）下
+  // windowWidth=1280 会把画布换算到 1171px 溢出列外——H5 改量 #navChart 实际宽
+  // #ifdef H5
+  uni.createSelectorQuery()
+    .in(instance?.proxy)
+    .select('#navChart')
+    .boundingClientRect((rect) => {
+      if (!rect || rect.width < 40) return
+      drawChartWithSize(rect.width, (rect.width * 420) / 686, crossTs)
+    })
+    .exec()
+  return
+  // #endif
   const win = uni.getWindowInfo ? uni.getWindowInfo() : uni.getSystemInfoSync()
-  const W = (win.windowWidth / 750) * 686
-  const H = (win.windowWidth / 750) * 420
+  drawChartWithSize((win.windowWidth / 750) * 686, (win.windowWidth / 750) * 420, crossTs)
+}
+
+function drawChartWithSize(W: number, H: number, crossTs?: number) {
+  const series = d.value?.nav_series || []
+  if (series.length < 2) return
+  const ctx = uni.createCanvasContext('navChart', instance?.proxy)
   const padL = 8
   const padR = 58
   const padT = 14
@@ -451,6 +466,13 @@ onLoad((q) => {
   width: 686rpx;
   height: 420rpx;
 }
+/* #ifdef H5 */
+.chart {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 686 / 420;
+}
+/* #endif */
 .cross-label {
   font-size: 24rpx;
   color: #d54941;
