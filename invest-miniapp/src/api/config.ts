@@ -33,7 +33,25 @@ export function setMode(v: AuthMode) {
 }
 
 export function getServer(): string {
-  return uni.getStorageSync(SERVER_KEY) || ENV_SERVER
+  const stored = uni.getStorageSync(SERVER_KEY) || ENV_SERVER
+  if (stored) {
+    return stored
+  }
+  // H5 同源部署（nginx 反代 /api 同域）：未配置服务器时回退当前站点 origin，
+  // 使"未配置服务器"拦截不再误伤同源形态（2026-11-07 ECS H5 部署实证）
+  // #ifdef H5
+  if (typeof window !== 'undefined' && window.location?.origin?.startsWith('http')) {
+    return window.location.origin
+  }
+  // #endif
+  return ''
+}
+
+export function hasServer(): boolean {
+  // #ifdef H5
+  return true
+  // #endif
+  return getServer() !== ''
 }
 
 export function setServer(v: string) {
