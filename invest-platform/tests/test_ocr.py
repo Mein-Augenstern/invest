@@ -12,11 +12,13 @@ from invest.webapp import create_app
 
 
 def _cjk_font(size: int = 28):
-    """系统 CJK 字体自适应（macOS 各版本预装字体不同：PingFang→Hiragino→STHeiti）。"""
+    """系统 CJK 字体自适应（macOS 各版本预装字体不同：PingFang→Hiragino→STHeiti；
+    Linux（CI runner）用 fonts-noto-cjk 包的 Noto Sans CJK）。"""
     for p in (
         "/System/Library/Fonts/PingFang.ttc",
         "/System/Library/Fonts/Hiragino Sans GB.ttc",
         "/System/Library/Fonts/STHeiti Medium.ttc",
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
     ):
         try:
             return ImageFont.truetype(p, size)
