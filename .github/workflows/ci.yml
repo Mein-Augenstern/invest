@@ -25,5 +25,8 @@ jobs:
       - name: Sync dependencies (dev group)
         run: uv sync --group dev
 
+      - name: Install CJK fonts (test_ocr 渲染依赖)
+        run: sudo apt-get update && sudo apt-get install -y fonts-noto-cjk
+
       - name: Run tests
         run: uv run pytest -q
