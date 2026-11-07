@@ -76,8 +76,15 @@ def _glm_chat(system: str, user: str) -> str | None:
 
 def ocr_image(path: Path) -> str:
     """macOS Vision 本地 OCR（zh-Hans + en-US，精确模式）。"""
-    import Vision
-    from Foundation import NSURL
+    try:
+        import Vision
+        from Foundation import NSURL
+    except ImportError as e:
+        # 非 macOS 平台的明确语义（Linux 容器请配置 GLM Key 走 AI 解析路径）
+        raise RuntimeError(
+            "本地 OCR 仅支持 macOS（Vision 框架不可用）；"
+            "Linux 服务器请配置 INVEST_GLM_API_KEY 走 AI 解析路径"
+        ) from e
 
     url = NSURL.fileURLWithPath_(str(path))
     handler = Vision.VNImageRequestHandler.alloc().initWithURL_options_(url, None)

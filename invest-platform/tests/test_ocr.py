@@ -1,5 +1,6 @@
 """S1 图片识别录入：Vision OCR 冒烟 + LLM 结构化 mock + 端点全链路。"""
 import io
+import sys
 from pathlib import Path
 
 import pytest
@@ -8,6 +9,10 @@ from PIL import Image, ImageDraw, ImageFont
 
 from invest import config as cfg
 from invest.ocr import ocr_image, parse_instrument_by_llm, parse_trades_by_llm
+
+# 本地 OCR 是 macOS Vision 能力（pyobjc 仅 darwin 安装）；Linux/CI 走 GLM AI 解析路径。
+LOCAL_OCR = pytest.mark.skipif(sys.platform != "darwin",
+                               reason="本地 OCR 为 macOS Vision 能力，非 darwin 平台降级")
 from invest.webapp import create_app
 
 
@@ -38,6 +43,7 @@ def _make_shot(path: Path):
     img.save(path)
 
 
+@LOCAL_OCR
 def test_vision_ocr_chinese(tmp_path):
     """本机 Vision OCR：中文交易要素可识别（数字与日期精确）。"""
     shot = tmp_path / "shot.png"
@@ -81,6 +87,7 @@ def client(tmp_path):
     return TestClient(app)
 
 
+@LOCAL_OCR
 def test_ocr_endpoint_roundtrip(client, tmp_path, monkeypatch):
     """端点全链路：上传→OCR→（无Key）降级返回文本；文件校验拒绝非图片。"""
     shot = tmp_path / "shot.png"
@@ -137,6 +144,7 @@ def test_instrument_llm_parse_cleans(monkeypatch):
                    "code": "110022", "benchmark_index": "沪深300", "account": "pension"}
 
 
+@LOCAL_OCR
 def test_instrument_parse_endpoint_roundtrip(client, tmp_path, monkeypatch):
     """标的识别端点全链路：上传→OCR→（无Key）降级只回原文；非法扩展名 422。"""
     shot = tmp_path / "ins.png"
