@@ -265,6 +265,10 @@ class TestAutoPullOnStale:
 
             r = client.get("/api/invest/overview")
             assert r.status_code == 200
+            import os as _os
+            from invest.webapp.routes_mp import _AUTO_PULL_STATE as _aps
+            print(f"[DIAG] env={_os.environ.get('INVEST_AUTOPULL_ON_STALE')!r} last_at={_aps['last_at']!r} "
+                  f"stale={r.json()['data_stale']!r} dburl={_os.environ.get('INVEST_DB_URL')!r}")
             assert r.json()["data_stale"] is True
             assert len(started) == 1  # 自动补拉已触发
             # 限频：30 分钟内第二次访问不再触发
