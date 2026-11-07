@@ -10,6 +10,36 @@
         (coverSupport ? ', viewport-fit=cover' : '') + '" />')
     </script>
     <title>invest</title>
+    <style>
+      /* PC 宽屏适配（≥768px）：手机 UI 限宽 420px 居中成"手机列"，
+         两侧暗色；transform 使页面内 fixed 元素（fab/弹窗）以列包含块定位。
+         手机端（<768px）完全不受影响。 */
+      @media screen and (min-width: 768px) {
+        html, body { background: #101014 !important; }
+        uni-app, uni-page, uni-page-wrapper, uni-page-body {
+          max-width: 420px !important;
+          margin-left: auto !important;
+          margin-right: auto !important;
+          background: #101014 !important;
+        }
+        uni-page-wrapper { transform: translateZ(0); }
+        uni-tabbar, .uni-tabbar {
+          max-width: 420px !important;
+          left: 0 !important;
+          right: 0 !important;
+          margin: 0 auto !important;
+          transform: translateX(0) !important;
+        }
+        uni-tabbar .uni-tabbar, .uni-tabbar__bd {
+          max-width: 420px !important;
+          margin: 0 auto !important;
+        }
+        uni-page-head .uni-page-head {
+          max-width: 420px !important;
+          margin: 0 auto !important;
+        }
+      }
+    </style>
     <!--preload-links-->
     <!--app-context-->
   </head>
