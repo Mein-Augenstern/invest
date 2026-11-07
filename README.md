@@ -1,5 +1,7 @@
 # invest · 个人投资记账与纪律工具（单仓 monorepo）
 
+[![CI](https://github.com/Mein-Augenstern/invest/actions/workflows/ci.yml/badge.svg)](https://github.com/Mein-Augenstern/invest/actions/workflows/ci.yml)
+
 > 作者自用起步、**分阶段开放中**（白名单 → 公开发布，路线见 [docs/prd/product.md](docs/prd/product.md) §6）。
 > 前后端同仓：一个迭代周期内 API 契约与前端同步改动，单人项目 monorepo 最省同步成本。
 > 登录/网关/鉴权接入 star 平台，业务与 star 系列完全独立。
