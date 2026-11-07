@@ -15,7 +15,7 @@ dependencies = [
     "pyobjc-framework-vision>=12.2.2; sys_platform == 'darwin'",
     "pymysql>=1.1.0",
     "python-multipart>=0.0.32",
-    "pyyaml>=6.0",
+    "pyyaml>=6.0.3",
     "requests>=2.31",
     "uvicorn>=0.52.4",
 ]
