@@ -30,3 +30,14 @@ def test_xirr_with_intermediate_withdrawal():
         10500.0,
     )
     assert 0.09 < r < 0.11
+
+
+def test_xirr_short_window_divergence_raises():
+    """小额现金流 × 短持有期 × 大幅盈利 → 年化数学发散，应抛错降级而非展示天文数字。"""
+    import pytest
+    from datetime import date, timedelta
+    from invest.ledger.returns import xirr
+    start = date(2026, 11, 1)
+    flows = [(start.isoformat(), -1000.0), ((start + timedelta(days=1)).isoformat(), -500.0)]
+    with pytest.raises(ValueError, match="XIRR"):  # 发散或未收敛，均为降级语义
+        xirr(flows, (start + timedelta(days=2)).isoformat(), 7788.0)

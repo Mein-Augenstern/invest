@@ -12,11 +12,25 @@ def _year_frac(d0: datetime, d: datetime) -> float:
     return (d - d0).days / 365.0
 
 
+#: 年化合理性封顶：超出 ±1000% 视为数学发散（小额现金流 × 短持有期 × 大幅盈亏
+#: 的组合会产生天文数字"解"，如 1000 元几天涨到 7788 → 年化 +1 万亿%）——
+#: 展示层不该给用户看这种数字，抛错让调用方降级为 xirr_error/None。
+XIRR_PLAUSIBLE_CAP = 10.0
+
+
+def _ensure_plausible(rate: float) -> None:
+    if abs(rate) > XIRR_PLAUSIBLE_CAP:
+        raise ValueError(
+            f"XIRR 年化超出可参考范围（±1000%）：持有期过短或现金流异常（{rate:.2%}）"
+        )
+
+
 def xirr(cashflows: list[tuple[str, float]], value_date: str, current_value: float) -> float:
     """解 r 使 Σ cf_i / (1+r)^t_i = 0，t_i 为年化期限。
 
     cashflows: [(日期, 金额)]，负=投入 正=回收；
     current_value: value_date 时点的市值（作为期末正流入参与求解）。
+    收敛结果超出 ±1000% 时抛 ValueError（调用方统一降级为 xirr_error/None）。
     """
     if not cashflows:
         raise ValueError("现金流为空，无法计算 XIRR")
@@ -44,6 +58,7 @@ def xirr(cashflows: list[tuple[str, float]], value_date: str, current_value: flo
         if new_rate <= -1.0:
             new_rate = (rate - 1.0) / 2  # 防跨出定义域
         if abs(new_rate - rate) < 1e-10:
+            _ensure_plausible(new_rate)
             return new_rate
         rate = new_rate
 
@@ -56,9 +71,11 @@ def xirr(cashflows: list[tuple[str, float]], value_date: str, current_value: flo
         mid = (lo + hi) / 2
         fm = npv(mid)
         if abs(fm) < 1e-9:
+            _ensure_plausible(mid)
             return mid
         if flo * fm < 0:
             hi, fhi = mid, fm
         else:
             lo, flo = mid, fm
+    _ensure_plausible((lo + hi) / 2)
     return (lo + hi) / 2
