@@ -10,10 +10,13 @@ export const BASE_PATH = '/api/invest'
 
 /**
  * API 基地址：缺省同源相对路径（开发期 vite 代理 / 生产期同域反代）。
- * S10 过渡形态（无自有域名）：VITE_API_BASE 指向 trycloudflare 隧道 HTTPS 地址，
- * 前端 pages.dev 与 API 跨域，靠后端 INVEST_ALLOWED_ORIGINS 单点放行。
+ * Cloudflare 入口形态（无自有域名）：构建时 VITE_API_BASE 注入 trycloudflare
+ * 隧道 HTTPS 地址（vite.config 的 define，import.meta.env 内联不可靠），
+ * 前端 pages.dev 与 API 跨域，靠后端 INVEST_ALLOWED_ORIGINS 精确放行。
  */
-const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined)?.replace(/\/$/, '') || ''
+declare const __API_BASE__: string
+// define 保证构建期替换（typeof 守卫会逃逸替换导致恒空——2026-11-08 实证）
+const API_BASE = __API_BASE__.replace(/\/$/, '')
 
 const DEFAULT_TIMEOUT_MS = 20_000
 
@@ -45,7 +48,9 @@ export interface RequestOptions {
 }
 
 export function buildUrl(url: string, params?: RequestOptions['params'], rawPath = false): string {
-  let full = rawPath ? url : `${API_BASE}${BASE_PATH}${url}`
+  // rawPath（/api/auth/** 网关路径）也要带 API_BASE——同源部署时 API_BASE 为空
+  // 恰好正确，跨域（pages.dev→隧道）下漏拼会打到静态站 405（2026-11-08 实证）
+  let full = rawPath ? `${API_BASE}${url}` : `${API_BASE}${BASE_PATH}${url}`
   if (params) {
     const qs = Object.entries(params)
       .filter(([, v]) => v !== undefined && v !== '')

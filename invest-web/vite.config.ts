@@ -9,6 +9,11 @@ export default defineConfig(({ mode }) => {
   const target = env.INVEST_DEV_API || 'http://47.92.235.34'
   return {
     plugins: [vue()],
+    define: {
+      // API 基址经 define 注入（import.meta.env 的可选链访问不被可靠内联，
+      // 2026-11-08 实证：产物含值但运行时取空 → 登录打到静态站 405）
+      __API_BASE__: JSON.stringify(env.VITE_API_BASE || process.env.VITE_API_BASE || ''),
+    },
     resolve: {
       alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
     },

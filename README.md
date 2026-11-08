@@ -11,13 +11,15 @@
 
 | 端 | 地址 | 登录方式 |
 |----|------|----------|
-| **PC 投研管理台** | **http://47.92.235.34/** | star 会员账号密码（登录页可注册） |
+| **PC 投研管理台** | **https://invest-6eq.pages.dev/**（Cloudflare · HTTPS · 主入口） | star 会员账号密码（登录页可注册） |
+| PC 备用入口 | http://47.92.235.34/（ECS 直连，隧道故障时用） | 同上 |
 | H5（移动网页） | http://47.92.235.34/h5/ | 同上（浏览器）；微信内打开自动登录 |
 | 微信小程序 | 体验版 | 微信静默登录（设置页服务器切 gateway 模式 `http://47.92.235.34`） |
 
-> 统一入口：ECS nginx 全同源（无 CORS/无隧道依赖）；
-> 会员/登录由 star 平台基础服务承担（网关+会员部署于运营者 Mac Docker，
-> frp 出站隧道接入）。~~invest-6eq.pages.dev~~ 已退役（过渡形态）。
+> 双入口：Cloudflare pages.dev（HTTPS，API 经 trycloudflare 隧道，CORS 单点放行
+> + 网关重复 CORS 头已由 nginx 收敛）与 ECS IP 直连（同源备用）并行；
+> 会员/登录由 star 平台基础服务承担（网关+会员部署于运营者 Mac Docker，frp 接入）。
+> 隧道地址变更后重建部署：见 invest-web/README（VITE_API_BASE 注入）。
 > 产品定位与会员化路线见 [docs/prd/product.md](docs/prd/product.md) §6。
 
 ## 布局
