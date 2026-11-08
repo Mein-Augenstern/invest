@@ -57,6 +57,17 @@ export function deleteTrade(row: Record<string, string | number>): Promise<Ok> {
   return request({ url: '/trades/delete', method: 'POST', data: { row } })
 }
 
+/** 智能录入 v1：一句话 → 流水草稿（不落库，确认走 addTrade） */
+export function parseTradeText(text: string): Promise<{
+  draft: Partial<NewTrade> | null
+  instrument: { id: string; name: string } | null
+  candidates: { id: string; name: string }[]
+  missing: string[]
+  explanation: string
+}> {
+  return request({ url: '/trades/parse', method: 'POST', data: { text }, timeoutMs: 15_000 })
+}
+
 /* ---------- 标的详情 / 手工净值 ---------- */
 
 export function getInstrumentDetail(id: string): Promise<HoldingDetail> {

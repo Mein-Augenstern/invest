@@ -263,6 +263,32 @@ def mp_add_trade(
     return {"ok": True, "trade": trade}
 
 
+@router.post("/trades/parse")
+def mp_parse_trade_text(
+    payload: dict = Body(...),
+    conf=Depends(get_conf),
+    store=Depends(get_store),
+) -> dict:
+    """智能录入 v1：一句话 → 流水草稿（不落库，确认走 POST /trades）。
+
+    规则解析（确定性）：日期/动作/标的模糊匹配/金额或份额/费用；
+    金额自动按最新净值折份额；不确定字段进 missing 由用户在表单补。
+    """
+    from ..config import series_kind
+    from ..smart_entry import parse_trade_text
+
+    text = str(payload.get("text", ""))
+
+    def _price_of(instrument_id: str):
+        ins = next((i for i in conf.instruments if i.id == instrument_id), None)
+        if not ins:
+            return None
+        latest = store.latest(ins.code or ins.id, series_kind(ins.type))
+        return latest[1] if latest else None
+
+    return parse_trade_text(text, conf.instruments, latest_price_of=_price_of)
+
+
 @router.post("/trades/delete")
 def mp_delete_trade(
     request: Request,

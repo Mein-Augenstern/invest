@@ -6,11 +6,11 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
-import { Plus } from '@element-plus/icons-vue'
+import { MagicStick, Plus } from '@element-plus/icons-vue'
 import PageHeader from '@/components/PageHeader.vue'
 import StateBlock from '@/components/StateBlock.vue'
 import { errMsg } from '@/api/client'
-import { addTrade, deleteTrade, getTrades } from '@/api/invest'
+import { addTrade, deleteTrade, getTrades, parseTradeText } from '@/api/invest'
 import { ACTION_LABELS, type InstrumentBrief, type TradeRow } from '@/types'
 import { fmtAmount, fmtQty, localDate } from '@/utils/format'
 
@@ -129,6 +129,56 @@ function openAdd() {
   dialog.value = true
 }
 
+/* ---------- 智能录入 v1：一句话 → 预填确认 ---------- */
+
+const smartText = ref('')
+const smartBusy = ref(false)
+
+async function smartParse() {
+  const text = smartText.value.trim()
+  if (!text || smartBusy.value) return
+  smartBusy.value = true
+  try {
+    const r = await parseTradeText(text)
+    if (!r.draft) {
+      ElMessage.warning('没听懂，试试「今天买入消费50 1000元」')
+      return
+    }
+    const d = r.draft
+    form.instrument_id = d.instrument_id || filter.instrument || form.instrument_id
+    form.action = (d.action as typeof form.action) || 'buy'
+    form.date = d.date || localDate()
+    form.price = d.price ?? undefined
+    form.quantity = d.quantity ?? undefined
+    form.amount = undefined
+    form.fee = d.fee || undefined
+    form.note = d.note || ''
+    form.byAmount = false
+    dialog.value = true
+    if (r.missing.length) ElMessage.info(r.explanation)
+    else ElMessage.success(r.explanation)
+    smartText.value = ''
+  } catch (e) {
+    ElMessage.error(errMsg(e))
+  } finally {
+    smartBusy.value = false
+  }
+}
+
+/** 再来一笔：复制某行（日期换成今天）——定投场景一键复录 */
+function repeatRow(row: TradeRow) {
+  form.instrument_id = row.instrument_id
+  form.action = row.action
+  form.date = localDate()
+  form.price = row.price || undefined
+  form.quantity = row.quantity || undefined
+  form.amount = undefined
+  form.fee = row.fee || undefined
+  form.note = row.note || ''
+  form.byAmount = false
+  dialog.value = true
+}
+
 async function submit() {
   if (!formRef.value) return
   const valid = await formRef.value.validate().catch(() => false)
@@ -171,6 +221,19 @@ onMounted(load)
   </PageHeader>
 
   <div class="panel">
+    <div class="smart-bar">
+      <el-input
+        v-model="smartText"
+        placeholder="一句话记账：今天买入消费50 1000元 / 昨天定投红利 500 / 缴存养老金 3000"
+        clearable
+        class="smart-input"
+        @keyup.enter="smartParse"
+      >
+        <template #prefix><el-icon><MagicStick /></el-icon></template>
+      </el-input>
+      <el-button type="primary" :loading="smartBusy" @click="smartParse">解析记账</el-button>
+      <span class="muted smart-hint">解析后弹窗预填，确认才落账</span>
+    </div>
     <div class="filters">
       <el-select v-model="filter.instrument" placeholder="全部标的" clearable filterable style="width: 220px">
         <el-option v-for="i in instruments" :key="i.id" :label="i.name" :value="i.id" />
@@ -207,8 +270,9 @@ onMounted(load)
           <template #default="{ row }">{{ row.fee ? fmtAmount(row.fee) : '—' }}</template>
         </el-table-column>
         <el-table-column prop="note" label="备注" min-width="160" show-overflow-tooltip />
-        <el-table-column label="操作" width="80" align="center" fixed="right">
+        <el-table-column label="操作" width="120" align="center" fixed="right">
           <template #default="{ row }">
+            <el-button link type="primary" @click="repeatRow(row as TradeRow)">再来一笔</el-button>
             <el-popconfirm title="确定删除这条流水？" confirm-button-text="删除" @confirm="remove(row as TradeRow)">
               <template #reference>
                 <el-button link type="danger">删除</el-button>
@@ -284,6 +348,19 @@ onMounted(load)
 </template>
 
 <style scoped>
+.smart-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.smart-input {
+  flex: 1;
+}
+.smart-hint {
+  font-size: 12px;
+  flex-shrink: 0;
+}
 .filters {
   display: flex;
   gap: 12px;
