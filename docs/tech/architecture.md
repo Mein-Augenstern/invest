@@ -175,16 +175,43 @@ OCR：选图 → POST /ocr(multipart) → Vision 提文本 → GLM 结构化(可
 
 ## 5. 部署形态
 
-| | 本机 dev | ECS 自托管（2026-11-07 起） | PC Web（S10，进行中） |
-|---|---|---|---|
-| 入口 | `http://<局域网IP>:8080`（开发者工具关域名校验 / 体验版调试模式） | `http://47.92.235.34/`（nginx：H5 静态 + `/api` 反代） | `https://invest.<domain>`（Cloudflare Pages） |
-| 鉴权 | star JWT | 静态 token，客户端携带（nginx **不注入**，2026-11-08 整改） | 同左，登录页输入，仅存 localStorage |
-| API 链路 | 同机直连 | 同源反代 → `127.0.0.1:8790` | `_redirects` 同 zone 代理 → `api.<domain>`（Cloudflare Tunnel 出站隧道）→ `127.0.0.1:8790` |
-| 数据 | MySQL `invest_dev`（本机 star-mysql 容器） | MySQL `invest_dev`（ECS invest-mysql 容器） | 同 ECS |
-| 密钥 | `invest-platform/.env.dev` | `scripts/secrets/*.env`（gitignored）→ 容器 `--env-file` | 同 ECS；隧道凭据存 ECS 本地 |
+| | 本机 dev | ECS 自托管（2026-11-07 起） | PC Web（S10，2026-11-08 上线·过渡形态） | 目标（S11：star 底座会员化） |
+|---|---|---|---|---|
+| 入口 | `http://<局域网IP>:8080` | `http://47.92.235.34/`（nginx：H5 静态 + `/api` 反代） | `https://invest-6eq.pages.dev`（Cloudflare Pages） | 同左 + 固定域名（购买后） |
+| 鉴权 | star JWT | 静态 token，客户端携带（nginx **不注入**） | 同左，登录页输入 token | **star JWT**（网关签发，invest 纵深校验） |
+| API 链路 | 同机直连 | 同源反代 → `127.0.0.1:8790` | 跨域 fetch → trycloudflare 快速隧道 → `127.0.0.1:8790`（CORS 单点放行） | nginx 前置（限流）→ star 网关 → invest |
+| 基础服务 | star 全家桶（Mac compose） | **无**（提醒仍依赖 Mac frp 隧道） | 无 | **star 最小集上 ECS**：网关+会员（+提醒） |
+| 数据 | MySQL `invest_dev`（本机容器） | MySQL `invest_dev`（ECS 容器），trades 为 CSV 单账本 | 同 ECS | MySQL 全量（trades 迁库 + member_id 隔离） |
+| 密钥 | `invest-platform/.env.dev` | `scripts/secrets/*.env`（gitignored）→ 容器 `--env-file` | 同 ECS；隧道凭据存 ECS 本地 | 同左 + `INVEST_JWT_SECRET`（与 star 一致） |
 
 > 混合内容约束：HTTPS 页面不能调用 `http://<裸IP>`，Cloudflare 也不接受裸 IP 回源——
 > PC Web 必须经域名 + Tunnel，这是选择出站隧道而非开放 443 的原因（同时免备案）。
+
+## 5.1 目标架构：star 基础服务底座（S11）
+
+> 章程 v2.2：平台与基础服务必须 star 系列；invest 只做产品模块。
+
+```mermaid
+flowchart TB
+  PC["PC Web invest-6eq.pages.dev"] -->|"账号密码/微信 登录"| GW
+  MP["微信小程序"] -->|"wx-login 静默"| GW
+  H5["H5（ECS 同源）"] --> GW
+  subgraph ECS["ECS（2C2G · nginx 前置限流）"]
+    NG["nginx :80"] --> GW["star 网关<br/>JWT 签发/校验 · 登录限流"]
+    GW --> MEMBER["star member<br/>会员/注册/角色"]
+    GW -->|"​/api/invest/**"| INV["invest-app :8790<br/>INVEST_AUTH_MODE=star"]
+    GW -->|"​/api/reminder/**"| REM["star reminder（随后）"]
+    INV --> MY[("MySQL invest 库<br/>trades 迁库 · member_id 隔离")]
+    MEMBER --> MY
+    TUN["cloudflared 隧道"] --> INV
+  end
+  PC -.->|"API 跨域（过渡）"| TUN
+```
+
+**内存预算（2C2G=1888MB，需 S11 第一步实测校准）**：
+invest-mysql 700m + invest-app 350m + tunnel 80m ≈ 1130m（现状）；
+star 网关+member 目标各 ≤300m（JVM 压堆）≈ +600m → **接近上限**。
+超限时按序取舍：MySQL 降至 600m（重导验证）→ reminder 延后 → 建议升配 2C4G。
 
 ## 6. 已知约束（排查过的坑，改动前先读）
 
