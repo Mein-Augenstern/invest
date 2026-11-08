@@ -175,12 +175,16 @@ OCR：选图 → POST /ocr(multipart) → Vision 提文本 → GLM 结构化(可
 
 ## 5. 部署形态
 
-| | 当前（本机 dev） | 目标（公网化，待域名/执照） |
-|---|---|---|
-| 入口 | `http://<局域网IP>:8080`（开发者工具关域名校验 / 体验版调试模式） | 备案域名 + HTTPS + Nginx 限流 |
-| 鉴权 | star JWT（新密钥已轮换） | 同左 + request 合法域名白名单 |
-| 数据 | MySQL `invest_dev`（本机 star-mysql 容器） | 云端 star-mysql 同实例 `invest` 库 + 每日备份 |
-| invest 进程 | dev-serve.sh 双端口 | 阿里云节点容器（Dockerfile 就绪） |
+| | 本机 dev | ECS 自托管（2026-11-07 起） | PC Web（S10，进行中） |
+|---|---|---|---|
+| 入口 | `http://<局域网IP>:8080`（开发者工具关域名校验 / 体验版调试模式） | `http://47.92.235.34/`（nginx：H5 静态 + `/api` 反代） | `https://invest.<domain>`（Cloudflare Pages） |
+| 鉴权 | star JWT | 静态 token，客户端携带（nginx **不注入**，2026-11-08 整改） | 同左，登录页输入，仅存 localStorage |
+| API 链路 | 同机直连 | 同源反代 → `127.0.0.1:8790` | `_redirects` 同 zone 代理 → `api.<domain>`（Cloudflare Tunnel 出站隧道）→ `127.0.0.1:8790` |
+| 数据 | MySQL `invest_dev`（本机 star-mysql 容器） | MySQL `invest_dev`（ECS invest-mysql 容器） | 同 ECS |
+| 密钥 | `invest-platform/.env.dev` | `scripts/secrets/*.env`（gitignored）→ 容器 `--env-file` | 同 ECS；隧道凭据存 ECS 本地 |
+
+> 混合内容约束：HTTPS 页面不能调用 `http://<裸IP>`，Cloudflare 也不接受裸 IP 回源——
+> PC Web 必须经域名 + Tunnel，这是选择出站隧道而非开放 443 的原因（同时免备案）。
 
 ## 6. 已知约束（排查过的坑，改动前先读）
 

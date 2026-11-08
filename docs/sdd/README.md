@@ -37,12 +37,14 @@ SXX-*.md        代码变更      AC 全过才关闭
 |---|---|---|---|
 | [S01](../prd/spec-S01-real-portfolio.md) | 真实组合配置 | 🔄 进行中 | P0 |
 | [S02](../prd/spec-S02-strategy-engine.md) | 策略引擎 v1 | ✅ 完成 | P1 |
-| [S03](S03-error-recovery.md) | 全局错误处理与自愈 | 📝 Spec | P0 |
-| [S04](S04-data-integrity.md) | 数据完整性与并发安全 | 📝 Spec | P0 |
-| [S05](S05-external-resilience.md) | 外部 API 韧性（超时/重试/熔断） | 📝 Spec | P1 |
-| [S06](S06-ux-patterns.md) | 页面 UX 模式规范（加载/空/错/重试） | 📝 Spec | P1 |
-| [S07](S07-navigation.md) | 导航与信息架构 | 📝 Spec | P2 |
-| [S08](S08-onboarding.md) | 首次使用引导 | 📝 Spec | P2 |
+| [S03](S03-error-recovery.md) | 全局错误处理与自愈 | ✅ 已实现（pytest 覆盖，验收记录待补） | P0 |
+| [S04](S04-data-integrity.md) | 数据完整性与并发安全 | ✅ 已实现（pytest 覆盖，验收记录待补） | P0 |
+| [S05](S05-external-resilience.md) | 外部 API 韧性（超时/重试/熔断） | ✅ 已实现（pytest 覆盖，验收记录待补） | P1 |
+| [S06](S06-ux-patterns.md) | 页面 UX 模式规范（加载/空/错/重试） | ✅ 已实现（前端组件，验收记录待补） | P1 |
+| [S07](S07-navigation.md) | 导航与信息架构 | ✅ 已实现（验收记录待补） | P2 |
+| [S08](S08-onboarding.md) | 首次使用引导 | ✅ 已实现（前端组件，验收记录待补） | P2 |
+| [S09](S09-distributed-schedule.md) | 分布式定时拉数 | ✅ 生产验收（2026-11-06） | P0 |
+| [S10](S10-pc-web.md) | PC Web 端（invest-web） | 🔄 进行中 | P1 |
 
 ## 稳定性优先原则
 

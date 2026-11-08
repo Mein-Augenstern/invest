@@ -8,9 +8,10 @@
 - **uni-app 3.0（5020420260813003）+ Vue3 `<script setup>` + TypeScript + vite 5.2.8**，
   与 star-site-app 技术栈对齐但**业务代码零共享**；依赖版本钉板见 `package.json`
 - 小程序是 invest-platform 的**移动入口**：领域逻辑（账本/指标/策略）全在 Python 端，
-  前端只做展示与录入——**所有操作在微信小程序完成，不存在 PC 端**（用户产品原则）
-- 唯一形态差异：H5 调试端（`pnpm dev:h5`，vite 代理 `/api` → invest:8792 同源免跨域）
-  仅供开发调试，不是产品端
+  前端只做展示与录入。桌面端由独立工程 `invest-web/` 承担（[S10](../../sdd/S10-pc-web.md)，
+  2026-11-08 PC 端解禁），两端共享 `types` / `utils` 口径，页面互不复用
+- H5 形态：开发调试（`pnpm dev:h5`，vite 代理 `/api` → invest:8792 同源免跨域）+
+  ECS 移动网页部署（`http://47.92.235.34/`，产物不内置 token，首访在「我的」页输入）
 
 ## 2. 目录结构
 
