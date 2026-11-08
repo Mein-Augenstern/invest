@@ -21,6 +21,17 @@ const error = ref(route.query.expired ? '登录已失效，请重新登录' : ''
 const mode = ref<'login' | 'register'>('login')
 const confirm = ref('')
 
+// 到达登录页即清除旧凭据——防止"登录了 A 却看到 B 数据"的缓存态
+// （2026-11-08 实证：用户 muyi 登录态残留，切 xiaopu 注册后仍以 muyi JWT 请求数据）
+import { onMounted } from 'vue'
+import { clearToken } from '@/api/config'
+onMounted(() => {
+  if (localStorage.getItem('invest_web_token')) {
+    clearToken()
+    auth.markExpired()
+  }
+})
+
 async function submit() {
   if (loading.value) return
   loading.value = true
