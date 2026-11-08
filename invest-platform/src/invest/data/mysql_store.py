@@ -53,6 +53,7 @@ CREATE TABLE IF NOT EXISTS fund_industry (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 CREATE TABLE IF NOT EXISTS signals (
     id INT NOT NULL AUTO_INCREMENT,
+    member_id INT NOT NULL DEFAULT 1,
     date VARCHAR(16) NOT NULL,
     instrument_id VARCHAR(64) NOT NULL,
     rule_ref VARCHAR(64) NOT NULL,
@@ -63,19 +64,22 @@ CREATE TABLE IF NOT EXISTS signals (
     created_at VARCHAR(32) NOT NULL,
     PRIMARY KEY (id),
     KEY idx_signals_dedup (date, instrument_id, rule_ref, action),
-    KEY idx_signals_status_id (status, id)
+    KEY idx_signals_status_id (status, id),
+    KEY idx_signals_member (member_id, id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 CREATE TABLE IF NOT EXISTS diary (
     id INT NOT NULL AUTO_INCREMENT,
+    member_id INT NOT NULL DEFAULT 1,
     date VARCHAR(16) NOT NULL,
     content TEXT NOT NULL,
     mood VARCHAR(16) NOT NULL DEFAULT '',
     created_at VARCHAR(32) NOT NULL,
     updated_at VARCHAR(32) NOT NULL,
     PRIMARY KEY (id),
-    UNIQUE KEY uk_diary_date (date)
+    UNIQUE KEY uk_diary_member_date (member_id, date)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 CREATE TABLE IF NOT EXISTS instruments (
+    member_id INT NOT NULL DEFAULT 1,
     id VARCHAR(64) NOT NULL,
     type VARCHAR(16) NOT NULL,
     name VARCHAR(128) NOT NULL,
@@ -84,9 +88,61 @@ CREATE TABLE IF NOT EXISTS instruments (
     benchmark_tr_code VARCHAR(32) NOT NULL DEFAULT '',
     account VARCHAR(64) NOT NULL DEFAULT '',
     updated_at VARCHAR(32) NOT NULL,
-    PRIMARY KEY (id)
+    PRIMARY KEY (member_id, id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS trades (
+    id INT NOT NULL AUTO_INCREMENT,
+    member_id INT NOT NULL,
+    date VARCHAR(16) NOT NULL,
+    instrument_id VARCHAR(64) NOT NULL,
+    action VARCHAR(32) NOT NULL,
+    quantity DOUBLE NOT NULL,
+    price DOUBLE NOT NULL,
+    fee DOUBLE NOT NULL DEFAULT 0,
+    note VARCHAR(255) NOT NULL DEFAULT '',
+    created_at VARCHAR(32) NOT NULL,
+    PRIMARY KEY (id),
+    KEY idx_trades_member_date (member_id, date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS audit_log (
+    id INT NOT NULL AUTO_INCREMENT,
+    member_id INT NOT NULL,
+    action VARCHAR(64) NOT NULL,
+    detail VARCHAR(255) NOT NULL DEFAULT '',
+    trace_id VARCHAR(64) NOT NULL DEFAULT '',
+    created_at VARCHAR(32) NOT NULL,
+    PRIMARY KEY (id),
+    KEY idx_audit_member (member_id, id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 """
+
+
+def _migrate_member_columns(cur) -> None:
+    """旧库升级（S11，与 LocalStore 同语义）：补 member_id 列、改唯一/主键、
+    历史 NULL 行归并默认会员。幂等可重跑（information_schema 探测）。"""
+    from .local import default_member_id
+
+    default = default_member_id()
+
+    def cols(table: str) -> set:
+        cur.execute("SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=%s", (table,))
+        return {r[0] for r in cur.fetchall()}
+
+    if "member_id" not in cols("signals"):
+        cur.execute("ALTER TABLE signals ADD COLUMN member_id INT NULL")
+        cur.execute("UPDATE signals SET member_id=%s WHERE member_id IS NULL", (default,))
+        cur.execute("ALTER TABLE signals ADD KEY idx_signals_member (member_id, id)")
+
+    if "member_id" not in cols("diary"):
+        cur.execute("ALTER TABLE diary ADD COLUMN member_id INT NULL")
+        cur.execute("UPDATE diary SET member_id=%s WHERE member_id IS NULL", (default,))
+        cur.execute("ALTER TABLE diary DROP INDEX uk_diary_date")
+        cur.execute("ALTER TABLE diary ADD UNIQUE KEY uk_diary_member_date (member_id, date)")
+
+    if "member_id" not in cols("instruments"):
+        cur.execute("ALTER TABLE instruments ADD COLUMN member_id INT NULL")
+        cur.execute("UPDATE instruments SET member_id=%s WHERE member_id IS NULL", (default,))
+        cur.execute("ALTER TABLE instruments DROP PRIMARY KEY, ADD PRIMARY KEY (member_id, id)")
 
 
 def parse_db_url(url: str) -> dict:
@@ -121,6 +177,7 @@ class MySQLStore:
         with self._conn() as conn:
             for stmt in [s.strip() for s in SCHEMA.split(";") if s.strip()]:
                 conn.cursor().execute(stmt)
+            _migrate_member_columns(conn.cursor())
 
     @classmethod
     def from_env(cls, url: str) -> "MySQLStore":
@@ -205,38 +262,38 @@ class MySQLStore:
                         return row[0]
         return None
 
-    # ---- 信号留痕 ----
+    # ---- 信号留痕（S11：member 维度） ----
 
-    def add_signals(self, signals: list) -> list[int]:
+    def add_signals(self, signals: list, member_id: int | None = None) -> list[int]:
+        from .local import default_member_id
+
+        mid = member_id if member_id is not None else default_member_id()
         now = datetime.now().isoformat(timespec="seconds")
         new_ids: list[int] = []
         with self._conn() as conn:
             with conn.cursor() as cur:
                 for s in signals:
                     cur.execute(
-                        "SELECT id FROM signals WHERE date=%s AND instrument_id=%s "
-                        "AND rule_ref=%s AND action=%s",
-                        (s.date, s.instrument_id, s.rule_ref, s.action),
+                        "SELECT id FROM signals WHERE member_id=%s AND date=%s AND instrument_id=%s AND rule_ref=%s AND action=%s",
+                        (mid, s.date, s.instrument_id, s.rule_ref, s.action),
                     )
                     if cur.fetchone():
                         continue
                     cur.execute(
-                        "INSERT INTO signals(date, instrument_id, rule_ref, metric, metric_value,"
-                        " action, status, created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
-                        (s.date, s.instrument_id, s.rule_ref, s.metric, s.metric_value,
-                         s.action, s.status, now),
+                        "INSERT INTO signals(member_id, date, instrument_id, rule_ref, metric, metric_value, action, status, created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                        (mid, s.date, s.instrument_id, s.rule_ref, s.metric, s.metric_value, s.action, s.status, now),
                     )
                     new_ids.append(int(cur.lastrowid))
         return new_ids
 
-    def recent_signals(self, limit: int = 10, status: str | None = None) -> list[tuple]:
-        sql = (
-            "SELECT id, date, instrument_id, rule_ref, metric, metric_value, action, status"
-            " FROM signals"
-        )
-        params: list = []
+    def recent_signals(self, member_id: int | None = None, limit: int = 10, status: str | None = None) -> list[tuple]:
+        from .local import default_member_id
+
+        mid = member_id if member_id is not None else default_member_id()
+        sql = "SELECT id, date, instrument_id, rule_ref, metric, metric_value, action, status FROM signals WHERE member_id=%s"
+        params: list = [mid]
         if status:
-            sql += " WHERE status = %s"
+            sql += " AND status = %s"
             params.append(status)
         sql += " ORDER BY id DESC LIMIT %s"
         params.append(limit)
@@ -245,84 +302,187 @@ class MySQLStore:
                 cur.execute(sql, params)
                 return [tuple(r) for r in cur.fetchall()]
 
-    def update_signal_status(self, signal_id: int, status: str) -> bool:
+    def update_signal_status(self, signal_id: int, status: str, member_id: int | None = None) -> bool:
+        sql = "UPDATE signals SET status=%s WHERE id=%s"
+        params: list = [status, signal_id]
+        if member_id is not None:
+            sql += " AND member_id=%s"
+            params.append(member_id)
         with self._conn() as conn:
             with conn.cursor() as cur:
-                cur.execute("UPDATE signals SET status=%s WHERE id=%s", (status, signal_id))
+                cur.execute(sql, params)
                 return cur.rowcount > 0
 
-    # ---- 投资日记 ----
+    # ---- 投资日记（S11：member 维度） ----
 
-    def upsert_diary(self, date: str, content: str, mood: str = "") -> bool:
+    def upsert_diary(self, date: str, content: str, mood: str = "", member_id: int | None = None) -> bool:
+        from .local import default_member_id
+
+        mid = member_id if member_id is not None else default_member_id()
         now = datetime.now().isoformat(timespec="seconds")
         with self._conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    "INSERT INTO diary(date, content, mood, created_at, updated_at)"
-                    " VALUES (%s,%s,%s,%s,%s)"
-                    " ON DUPLICATE KEY UPDATE content=VALUES(content), mood=VALUES(mood),"
-                    " updated_at=VALUES(updated_at)",
-                    (date, content, mood, now, now),
+                    "INSERT INTO diary(member_id, date, content, mood, created_at, updated_at) VALUES (%s,%s,%s,%s,%s,%s) ON DUPLICATE KEY UPDATE content=VALUES(content), mood=VALUES(mood), updated_at=VALUES(updated_at)",
+                    (mid, date, content, mood, now, now),
                 )
                 return cur.rowcount > 0
 
-    def delete_diary(self, date: str) -> bool:
+    def delete_diary(self, date: str, member_id: int | None = None) -> bool:
+        from .local import default_member_id
+
+        mid = member_id if member_id is not None else default_member_id()
         with self._conn() as conn:
             with conn.cursor() as cur:
-                cur.execute("DELETE FROM diary WHERE date=%s", (date,))
+                cur.execute("DELETE FROM diary WHERE member_id=%s AND date=%s", (mid, date))
                 return cur.rowcount > 0
 
-    def list_diary(self, limit: int = 50) -> list[tuple]:
+    def list_diary(self, member_id: int | None = None, limit: int = 50) -> list[tuple]:
+        from .local import default_member_id
+
+        mid = member_id if member_id is not None else default_member_id()
         with self._conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    "SELECT date, content, mood, updated_at FROM diary"
-                    " ORDER BY date DESC LIMIT %s",
-                    (limit,),
+                    "SELECT date, content, mood, updated_at FROM diary WHERE member_id=%s ORDER BY date DESC LIMIT %s",
+                    (mid, limit),
                 )
                 return [tuple(r) for r in cur.fetchall()]
 
-    def get_diary(self, date: str) -> tuple | None:
+    def get_diary(self, date: str, member_id: int | None = None) -> tuple | None:
+        from .local import default_member_id
+
+        mid = member_id if member_id is not None else default_member_id()
         with self._conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    "SELECT date, content, mood, updated_at FROM diary WHERE date=%s",
-                    (date,),
+                    "SELECT date, content, mood, updated_at FROM diary WHERE member_id=%s AND date=%s",
+                    (mid, date),
                 )
                 row = cur.fetchone()
                 return tuple(row) if row else None
 
-    # ---- 标的管理 ----
+    # ---- 标的管理（S11：member 维度） ----
 
-    def upsert_instrument(self, row: dict) -> None:
+    def upsert_instrument(self, row: dict, member_id: int | None = None) -> None:
+        from .local import default_member_id
+
+        mid = member_id if member_id is not None else default_member_id()
         now = datetime.now().isoformat(timespec="seconds")
         with self._conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    "INSERT INTO instruments(id, type, name, code, benchmark_index,"
-                    " benchmark_tr_code, account, updated_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)"
-                    " ON DUPLICATE KEY UPDATE type=VALUES(type), name=VALUES(name),"
-                    " code=VALUES(code), benchmark_index=VALUES(benchmark_index),"
-                    " benchmark_tr_code=VALUES(benchmark_tr_code), account=VALUES(account),"
-                    " updated_at=VALUES(updated_at)",
-                    (row["id"], row["type"], row["name"], row.get("code", ""),
+                    "INSERT INTO instruments(member_id, id, type, name, code, benchmark_index, benchmark_tr_code, account, updated_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) ON DUPLICATE KEY UPDATE type=VALUES(type), name=VALUES(name), code=VALUES(code), benchmark_index=VALUES(benchmark_index), benchmark_tr_code=VALUES(benchmark_tr_code), account=VALUES(account), updated_at=VALUES(updated_at)",
+                    (mid, row["id"], row["type"], row["name"], row.get("code", ""),
                      row.get("benchmark_index", ""), row.get("benchmark_tr_code", ""),
                      row.get("account", ""), now),
                 )
 
-    def delete_instrument(self, ins_id: str) -> bool:
+    def delete_instrument(self, ins_id: str, member_id: int | None = None) -> bool:
+        from .local import default_member_id
+
+        mid = member_id if member_id is not None else default_member_id()
         with self._conn() as conn:
             with conn.cursor() as cur:
-                cur.execute("DELETE FROM instruments WHERE id=%s", (ins_id,))
+                cur.execute("DELETE FROM instruments WHERE member_id=%s AND id=%s", (mid, ins_id))
                 return cur.rowcount > 0
 
-    def list_instruments(self) -> list[tuple]:
+    def list_instruments(self, member_id: int | None = None) -> list[tuple]:
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                if member_id is None:
+                    cur.execute(
+                        "SELECT id, type, name, code, benchmark_index, benchmark_tr_code, account FROM instruments ORDER BY id"
+                    )
+                else:
+                    cur.execute(
+                        "SELECT id, type, name, code, benchmark_index, benchmark_tr_code, account FROM instruments WHERE member_id=%s ORDER BY id",
+                        (member_id,),
+                    )
+                return [tuple(r) for r in cur.fetchall()]
+
+    # ---- 交易流水（S11：CSV 迁库，member 维度） ----
+
+    def append_trades(self, member_id: int, rows: list[dict]) -> int:
+        now = datetime.now().isoformat(timespec="seconds")
+        data = [
+            (member_id, r["date"], r["instrument_id"], r["action"],
+             float(r["quantity"]), float(r["price"]), float(r.get("fee") or 0), str(r.get("note") or ""), now)
+            for r in rows
+        ]
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.executemany(
+                    "INSERT INTO trades(member_id, date, instrument_id, action, quantity, price, fee, note, created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                    data,
+                )
+        return len(data)
+
+    def list_trades(self, member_id: int, instrument_id: str | None = None) -> list[dict]:
+        sql = "SELECT id, date, instrument_id, action, quantity, price, fee, note FROM trades WHERE member_id=%s"
+        params: list = [member_id]
+        if instrument_id:
+            sql += " AND instrument_id=%s"
+            params.append(instrument_id)
+        sql += " ORDER BY date, id"
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql, params)
+                rows = cur.fetchall()
+        return [
+            {"id": r[0], "date": r[1], "instrument_id": r[2], "action": r[3],
+             "quantity": r[4], "price": r[5], "fee": r[6], "note": r[7]}
+            for r in rows
+        ]
+
+    def delete_trade(self, member_id: int, trade_id: int) -> bool:
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM trades WHERE member_id=%s AND id=%s", (member_id, trade_id))
+                return cur.rowcount > 0
+
+    def delete_trade_row(self, member_id: int, row: dict) -> bool:
+        from ..ledger.trades import _row_matches
+
+        for r in self.list_trades(member_id):
+            if _row_matches({k: str(v) for k, v in r.items() if k != "id"}, row):
+                return self.delete_trade(member_id, r["id"])
+        return False
+
+    def trade_count(self, member_id: int) -> int:
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT COUNT(*) FROM trades WHERE member_id=%s", (member_id,))
+                return int(cur.fetchone()[0])
+
+    def member_ids_with_trades(self) -> list[int]:
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT DISTINCT member_id FROM trades ORDER BY member_id")
+                return [int(r[0]) for r in cur.fetchall()]
+
+    # ---- 审计（S11 AC-6） ----
+
+    def add_audit(self, member_id: int, action: str, detail: str = "", trace_id: str = "") -> None:
+        now = datetime.now().isoformat(timespec="seconds")
         with self._conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    "SELECT id, type, name, code, benchmark_index, benchmark_tr_code, account"
-                    " FROM instruments ORDER BY id"
+                    "INSERT INTO audit_log(member_id, action, detail, trace_id, created_at) VALUES (%s,%s,%s,%s,%s)",
+                    (member_id, action, detail, trace_id, now),
                 )
+
+    def list_audit(self, limit: int = 100, member_id: int | None = None) -> list[tuple]:
+        sql = "SELECT id, member_id, action, detail, trace_id, created_at FROM audit_log"
+        params: list = []
+        if member_id is not None:
+            sql += " WHERE member_id=%s"
+            params.append(member_id)
+        sql += " ORDER BY id DESC LIMIT %s"
+        params.append(limit)
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql, params)
                 return [tuple(r) for r in cur.fetchall()]
 
     # ---- 基金透视 ----

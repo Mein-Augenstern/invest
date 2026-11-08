@@ -29,6 +29,17 @@ def bench_app(tmp_path):
     # 写入 portfolio.local.yaml
     (config_dir / "portfolio.local.yaml").write_text("instruments: []\n")
 
+    # S11：权威账本在库内（CSV 仅为导入源/导出格式）——同步种入默认会员
+    from invest.data.local import LocalStore
+
+    LocalStore(data_dir / "invest.db").append_trades(
+        1,
+        [
+            {"date": "2026-11-01", "instrument_id": "consumer50_etf", "action": "buy", "quantity": 1000, "price": 0.50},
+            {"date": "2026-11-01", "instrument_id": "consumer50_etf", "action": "buy", "quantity": 10000, "price": 0.50},
+        ],
+    )
+
     app = FastAPI()
     app.state.data_dir = str(data_dir)
     from invest.webapp.routes_backup import router
@@ -104,19 +115,19 @@ class TestBackupAPI:
         assert resp.status_code == 200
         data = resp.json()
         assert data["healthy"] is True
-        assert "trades.csv" in data["files"]
-        assert data["files"]["trades.csv"]["valid_rows"] == 2
-        assert data["files"]["trades.csv"]["corrupted_rows"] == 0
+        # S11：权威行数来自库（CSV 时代已退役为导出格式）
+        assert data["files"]["trades"]["valid_rows"] == 2
+        assert data["files"]["trades"]["corrupted_rows"] == 0
 
-    def test_data_health_detects_corruption(self, bench_app):
+    def test_data_health_store_immune_to_csv_junk(self, bench_app):
+        """S11 语义：库内权威行数不受 data 目录杂散 CSV 影响（写入即校验）。"""
         app, client, data_dir, config_dir, trades_file = bench_app
-        # 注入损坏行
         with open(trades_file, "a", newline="") as f:
             f.write("2026-11-01,test,buy,BROKEN,1.0,,\n")
         resp = client.get("/api/invest/health/data")
         data = resp.json()
-        assert data["files"]["trades.csv"]["corrupted_rows"] == 1
-        assert data["healthy"] is False
+        assert data["files"]["trades"]["valid_rows"] == 2
+        assert data["healthy"] is True
 
 
 class TestSellValidation:

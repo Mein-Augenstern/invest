@@ -1,14 +1,30 @@
-"""JSON API（变更操作全部 POST + JSON body；无 CORS 头=预检必失败，天然防跨站）。"""
+"""JSON API（本机管理台用；变更操作全部 POST + JSON body；无 CORS 头=预检必失败）。
+
+S11：与 /api/invest 同源走 store（默认会员视角），CSV 时代接口形态保留。
+"""
 from __future__ import annotations
 
 from fastapi import APIRouter, Body, Depends, Request
 from fastapi.responses import JSONResponse
 
-from .deps import get_conf, get_data_dir, get_store, get_trades_path
-from ..ledger.trades import delete_trade, load_trades, save_validated_trade
+from .deps import get_conf, get_data_dir, get_member_id, get_store, get_trades
 from ..reporting import build_entry_state
 
 router = APIRouter(prefix="/api")
+
+
+def _as_trade(trade: dict):
+    from ..ledger.trades import Trade
+
+    return Trade(
+        date=trade["date"], instrument_id=trade["instrument_id"], action=trade["action"],
+        quantity=float(trade["quantity"]), price=float(trade["price"]),
+        fee=float(trade.get("fee") or 0), note=trade.get("note") or "",
+    )
+
+
+def _member_trades(store, member_id: int) -> list:
+    return [_as_trade(r) for r in store.list_trades(member_id)]
 
 
 @router.get("/ping")
@@ -17,21 +33,27 @@ def ping() -> dict:
 
 
 @router.get("/state")
-def state(conf=Depends(get_conf), store=Depends(get_store), trades_path=Depends(get_trades_path)) -> dict:
-    return build_entry_state(conf, store, load_trades(trades_path))
+def state(conf=Depends(get_conf), store=Depends(get_store), trades=Depends(get_trades)) -> dict:
+    return build_entry_state(conf, store, trades)
 
 
 @router.post("/trades")
 def add_trade(
     payload: dict = Body(...),
+    request: Request = None,
     conf=Depends(get_conf),
     store=Depends(get_store),
-    trades_path=Depends(get_trades_path),
+    trades=Depends(get_trades),
+    member_id=Depends(get_member_id),
 ) -> dict:
-    trade, err = save_validated_trade(trades_path, payload, conf, load_trades(trades_path))
+    from ..ledger.trades import validate_trade
+
+    trade, err = validate_trade(payload, conf, trades)
     if err:
         return JSONResponse({"error": err}, status_code=422)
-    return {"ok": True, "trade": trade, "state": build_entry_state(conf, store, load_trades(trades_path))}
+    store.append_trades(member_id, [trade])
+    refreshed = build_entry_state(conf, store, trades + [_as_trade(trade)])
+    return {"ok": True, "trade": trade, "state": refreshed}
 
 
 @router.post("/trades/delete")
@@ -39,20 +61,24 @@ def delete_trade_api(
     payload: dict = Body(...),
     conf=Depends(get_conf),
     store=Depends(get_store),
-    trades_path=Depends(get_trades_path),
+    trades=Depends(get_trades),
+    member_id=Depends(get_member_id),
 ):
     row = payload.get("row") or {}
-    if not delete_trade(trades_path, row):
+    trade_id = payload.get("id") or row.get("id")
+    ok = store.delete_trade(member_id, int(trade_id)) if trade_id else store.delete_trade_row(member_id, row)
+    if not ok:
         return JSONResponse({"error": "未找到该行（列表可能已变化），请刷新"}, status_code=409)
-    return {"ok": True, "state": build_entry_state(conf, store, load_trades(trades_path))}
+    return {"ok": True, "state": build_entry_state(conf, store, _member_trades(store, member_id))}
 
 
 @router.post("/signals/evaluate")
-def evaluate_signals(conf=Depends(get_conf), store=Depends(get_store), trades_path=Depends(get_trades_path)) -> dict:
+def evaluate_signals(conf=Depends(get_conf), store=Depends(get_store), trades=Depends(get_trades),
+                     member_id=Depends(get_member_id)) -> dict:
     """显式动作：评估策略规则并落库新信号（页面刷新不触发）。"""
     from ..reporting import evaluate_and_store_signals
 
-    new_count = evaluate_and_store_signals(conf, store, load_trades(trades_path))
+    new_count = evaluate_and_store_signals(conf, store, trades, member_id=member_id)
     return {"ok": True, "new": new_count}
 
 
@@ -97,7 +123,8 @@ def generate_report(
     payload: dict = Body(default={}),
     conf=Depends(get_conf),
     store=Depends(get_store),
-    trades_path=Depends(get_trades_path),
+    trades=Depends(get_trades),
+    member_id=Depends(get_member_id),
     data_dir=Depends(get_data_dir),
 ):
     """同步生成周报（单用户可接受；GLM 60s 上限由 digest 内部控制）。"""
@@ -106,8 +133,8 @@ def generate_report(
 
     from ..reporting import build_weekly_report_md
 
-    report = build_weekly_report_md(conf, store, load_trades(trades_path), with_ai=bool(payload.get("ai")))
-    out_dir = Path(data_dir) / "reports"
+    report = build_weekly_report_md(conf, store, trades, with_ai=bool(payload.get("ai")))
+    out_dir = Path(data_dir) / "reports" / str(member_id)
     out_dir.mkdir(parents=True, exist_ok=True)
     name = f"weekly-{datetime.now().strftime('%Y%m%d-%H%M%S')}.md"
     (out_dir / name).write_text(report, encoding="utf-8")

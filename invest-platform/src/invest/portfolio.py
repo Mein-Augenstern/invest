@@ -11,12 +11,16 @@ from .config import Account, Instrument, Portfolio
 from .data.local import LocalStore
 
 
-def load_portfolio(store: LocalStore | None = None, config_path=None) -> Portfolio:
-    """load_config + 可选的 db 标的合并。store 传 None 退化为纯 yaml（测试兼容）。"""
+def load_portfolio(store: LocalStore | None = None, config_path=None, member_id: int | None = None) -> Portfolio:
+    """load_config + 可选的 db 标的合并。store 传 None 退化为纯 yaml（测试兼容）。
+
+    member_id（S11）：传入则只合并该会员的 db 标的（yaml 种子全会员共享）；
+    None = 全会员合并（调度器拉数需要知道所有在管标的）。
+    """
     conf = cfg.load_config(config_path)
     if store is None:
         return conf
-    db_rows = store.list_instruments()
+    db_rows = store.list_instruments(member_id)
     if not db_rows:
         return conf
     by_id = {i.id: i for i in conf.instruments}

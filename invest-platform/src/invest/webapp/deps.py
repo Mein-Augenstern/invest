@@ -20,7 +20,8 @@ def get_store(request: Request):
 
 
 def get_conf(request: Request) -> cfg.Portfolio:
-    return load_portfolio(get_store(request), request.app.state.config_path)
+    """会员视角组合：yaml 种子 + 该会员的 db 标的（S11 隔离）。"""
+    return load_portfolio(get_store(request), request.app.state.config_path, get_member_id(request))
 
 
 def get_data_dir(request: Request) -> Path:
@@ -29,6 +30,57 @@ def get_data_dir(request: Request) -> Path:
 
 def get_trades_path(request: Request) -> Path:
     return Path(request.app.state.data_dir) / "trades.csv"
+
+
+def get_member_id(request: Request) -> int:
+    """当前会员 id：star JWT 的 sub；token/本机模式回落默认会员
+    （INVEST_DEFAULT_MEMBER_ID，生产指向运营者）。"""
+    mid = getattr(request.state, "member_id", None)
+    if isinstance(mid, int):
+        return mid
+    from ..data.local import default_member_id
+
+    return default_member_id()
+
+
+def get_trades(request: Request) -> list:
+    """当前会员的流水（S11：store 化，CSV 仅为导出格式）。"""
+    from ..ledger.trades import Trade
+
+    rows = get_store(request).list_trades(get_member_id(request))
+    return [
+        Trade(
+            date=r["date"],
+            instrument_id=r["instrument_id"],
+            action=r["action"],
+            quantity=float(r["quantity"]),
+            price=float(r["price"]),
+            fee=float(r.get("fee") or 0),
+            note=r.get("note") or "",
+        )
+        for r in rows
+    ]
+
+
+def require_admin(request: Request) -> int:
+    """运营者守卫：ADMIN_MEMBER_IDS（逗号分隔）内的会员放行，其余 403。"""
+    import os
+
+    member_id = get_member_id(request)
+    admins = {int(x) for x in os.environ.get("INVEST_ADMIN_MEMBER_IDS", "").split(",") if x.strip().isdigit()}
+    if member_id not in admins:
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=403, detail={"error": "需要运营者权限"})
+    return member_id
+
+
+def audit(request: Request, action: str, detail: str = "") -> None:
+    """写操作审计（S11 AC-6）：who/what/when/traceId，不含金额明文。"""
+    get_store(request).add_audit(
+        get_member_id(request), action, detail,
+        getattr(request.state, "trace_id", "") or "",
+    )
 
 
 def glm_key_file(data_dir) -> Path:

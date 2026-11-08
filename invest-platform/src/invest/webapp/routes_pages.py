@@ -117,9 +117,11 @@ def report_view(name: str, request: Request, data_dir=Depends(get_data_dir)):
 
     from fastapi import HTTPException
 
+    from ..data.local import default_member_id
+
     if not re.fullmatch(r"[A-Za-z0-9_\-]+\.md", name):
         raise HTTPException(status_code=404)
-    path = Path(data_dir) / "reports" / name
+    path = Path(data_dir) / "reports" / str(default_member_id()) / name
     if not path.is_file():
         raise HTTPException(status_code=404)
     return templates.TemplateResponse(

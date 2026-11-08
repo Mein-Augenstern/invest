@@ -52,15 +52,28 @@ def pull_and_evaluate(data_dir, config_path, store, log=print, provider=None) ->
     from ..data.akshare_provider import AkshareProvider
     from ..ledger.trades import load_trades
     from ..pipeline import run_pull
+    from ..ledger.trades import Trade
     from ..portfolio import load_portfolio
     from ..reporting import evaluate_and_store_signals
 
-    conf = load_portfolio(store, config_path)
+    conf = load_portfolio(store, config_path)  # union 视角：拉数覆盖所有在管标的
     run_pull(conf, store, provider or AkshareProvider(), log=log)
+    # S11：逐会员评估（行情是公共缓存，信号/账本是会员的）
     try:
-        new_count = evaluate_and_store_signals(conf, store, load_trades(Path(data_dir) / "trades.csv"))
-        log(f"[OK] 信号评估完成（新增 {new_count} 条）")
-        return new_count
+        total = 0
+        for mid in store.member_ids_with_trades():
+            member_conf = load_portfolio(store, config_path, mid)
+            trades = [
+                Trade(date=r["date"], instrument_id=r["instrument_id"], action=r["action"],
+                      quantity=float(r["quantity"]), price=float(r["price"]),
+                      fee=float(r.get("fee") or 0), note=r.get("note") or "")
+                for r in store.list_trades(mid)
+            ]
+            if not trades:
+                continue
+            total += evaluate_and_store_signals(member_conf, store, trades, member_id=mid)
+        log(f"[OK] 信号评估完成（新增 {total} 条）")
+        return total
     except Exception as e:  # noqa: BLE001 - 评估失败不影响拉数结果
         log(f"[WARN] 拉数后信号评估失败: {type(e).__name__}")
         return -1

@@ -171,8 +171,10 @@ def test_mp_report_latest(tmp_path):
     c = _make_client(tmp_path)
     # 无周报 → null
     assert c.get("/api/invest/report/latest").json() == {"report": None}
-    (tmp_path / "reports").mkdir()
-    (tmp_path / "reports" / "weekly-20261017-180000.md").write_text("# 周报\n内容", encoding="utf-8")
+    # S11：周报按会员归档（默认会员目录）
+    member_dir = tmp_path / "reports" / "1"
+    member_dir.mkdir(parents=True)
+    (member_dir / "weekly-20261017-180000.md").write_text("# 周报\n内容", encoding="utf-8")
     data = c.get("/api/invest/report/latest").json()
     assert data["file"] == "weekly-20261017-180000.md"
     assert "周报" in data["markdown"]
@@ -185,8 +187,8 @@ def test_mp_report_latest_picks_by_mtime_not_lexical(tmp_path):
     import time as _time
 
     c = _make_client(tmp_path)
-    reports = tmp_path / "reports"
-    reports.mkdir()
+    reports = tmp_path / "reports" / "1"  # S11：会员目录
+    reports.mkdir(parents=True)
     old = reports / "weekly-20261018.md"          # CLI 版：字典序反而大
     new = reports / "weekly-20261018-110419.md"   # 任务版：真正更新
     old.write_text("# 旧", encoding="utf-8")

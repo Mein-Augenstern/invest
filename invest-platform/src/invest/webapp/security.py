@@ -100,7 +100,9 @@ class TokenAuthMiddleware(BaseHTTPMiddleware):
         else:  # star
             import jwt as pyjwt
 
-            if parse_star_member(pyjwt, supplied, _star_jwt_secret()) is not None:
+            member = parse_star_member(pyjwt, supplied, _star_jwt_secret())
+            if member is not None:
+                request.state.member_id = member  # S11：会员身份贯穿数据隔离
                 return await call_next(request)
         return JSONResponse({"error": "unauthorized"}, status_code=401)
 

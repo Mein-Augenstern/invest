@@ -28,7 +28,7 @@ def _now() -> str:
     return time.strftime("%Y-%m-%d %H:%M:%S")
 
 
-def start_report(data_dir, config_path, with_ai: bool = False) -> tuple[bool, str]:
+def start_report(data_dir, config_path, with_ai: bool = False, member_id: int | None = None) -> tuple[bool, str]:
     with _lock:
         if _job.status == "running":
             return False, "已有周报生成任务进行中"
@@ -37,28 +37,35 @@ def start_report(data_dir, config_path, with_ai: bool = False) -> tuple[bool, st
         _job.finished = ""
         _job.file = ""
         _job.log = [f"{time.strftime('%H:%M:%S')} 开始生成周报（AI解读: {'开' if with_ai else '关'}）"]
-    t = threading.Thread(target=_run, args=(data_dir, config_path, with_ai), daemon=True)
+    t = threading.Thread(target=_run, args=(data_dir, config_path, with_ai, member_id), daemon=True)
     t.start()
     return True, ""
 
 
-def _run(data_dir, config_path, with_ai: bool) -> None:
+def _run(data_dir, config_path, with_ai: bool, member_id: int | None = None) -> None:
     # 局部导入便于测试 monkeypatch invest.reporting.build_weekly_report_md
     try:
         from datetime import datetime
         from pathlib import Path
 
+        from ..data.local import default_member_id
         from ..data.mysql_store import default_store
+        from ..ledger.trades import Trade
         from ..portfolio import load_portfolio
-        from ..ledger.trades import load_trades
         from ..reporting import build_weekly_report_md
 
         # default_store：本地 SQLite / 部署 MySQL（INVEST_DB_URL），与读路径同库
         store = default_store(Path(data_dir))
-        conf = load_portfolio(store, config_path)
-        trades = load_trades(Path(data_dir) / "trades.csv")
+        mid = member_id if member_id is not None else default_member_id()
+        conf = load_portfolio(store, config_path, mid)
+        trades = [
+            Trade(date=r["date"], instrument_id=r["instrument_id"], action=r["action"],
+                  quantity=float(r["quantity"]), price=float(r["price"]),
+                  fee=float(r.get("fee") or 0), note=r.get("note") or "")
+            for r in store.list_trades(mid)
+        ]
         report = build_weekly_report_md(conf, store, trades, with_ai=with_ai)
-        out_dir = Path(data_dir) / "reports"
+        out_dir = Path(data_dir) / "reports" / str(mid)  # S11：周报按会员归档
         out_dir.mkdir(parents=True, exist_ok=True)
         name = f"weekly-{datetime.now().strftime('%Y%m%d-%H%M%S')}.md"
         (out_dir / name).write_text(report, encoding="utf-8")

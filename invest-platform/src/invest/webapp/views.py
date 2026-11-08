@@ -1,9 +1,11 @@
-"""视图组装层：只调 reporting/领域层 + 少量表单态；禁止在此做 pandas 计算。"""
+"""视图组装层：只调 reporting/领域层 + 少量表单态；禁止在此做 pandas 计算。
+
+S11：流水走 store（默认会员视角），CSV 读取已退役为导出格式。
+"""
 from __future__ import annotations
 
 from pathlib import Path
 
-from ..ledger.trades import load_trades
 from ..reporting import (
     build_dashboard_data,
     build_entry_state,
@@ -13,12 +15,20 @@ from ..reporting import (
 )
 
 
-def _load(data_dir: Path):
-    return load_trades(Path(data_dir) / "trades.csv")
+def _load(store):
+    from ..data.local import default_member_id
+    from ..ledger.trades import Trade
+
+    return [
+        Trade(date=r["date"], instrument_id=r["instrument_id"], action=r["action"],
+              quantity=float(r["quantity"]), price=float(r["price"]),
+              fee=float(r.get("fee") or 0), note=r.get("note") or "")
+        for r in store.list_trades(default_member_id())
+    ]
 
 
 def index_context(conf, store, data_dir: Path) -> dict:
-    trades = _load(data_dir)
+    trades = _load(store)
     view = build_portfolio_view(conf, store, trades)
     name_of = {i.id: i.name for i in conf.instruments}
 
@@ -38,19 +48,19 @@ def index_context(conf, store, data_dir: Path) -> dict:
 
 
 def positions_context(conf, store, data_dir: Path) -> dict:
-    trades = _load(data_dir)
+    trades = _load(store)
     view = build_portfolio_view(conf, store, trades)
     dash = build_dashboard_data(conf, store, trades)
     return {"view": view, "chart_data": {"cmp": dash["cmp"]}}
 
 
 def instrument_context(conf, store, data_dir: Path, instrument_id: str) -> dict | None:
-    data = build_instrument_view(conf, store, _load(data_dir), instrument_id)
+    data = build_instrument_view(conf, store, _load(store), instrument_id)
     return {"d": data} if data else None
 
 
 def trades_context(conf, store, data_dir: Path) -> dict:
-    state = build_entry_state(conf, store, _load(data_dir))
+    state = build_entry_state(conf, store, _load(store))
     return {"state": state}
 
 
@@ -69,7 +79,10 @@ def signals_context(conf, store) -> dict:
 def reports_context(data_dir: Path) -> dict:
     from datetime import datetime
 
-    reports_dir = Path(data_dir) / "reports"
+    from ..data.local import default_member_id
+
+    # S11：周报按会员归档；本机管理台展示默认会员
+    reports_dir = Path(data_dir) / "reports" / str(default_member_id())
     files = []
     if reports_dir.exists():
         for p in sorted(reports_dir.glob("*.md"), key=lambda x: x.stat().st_mtime, reverse=True)[:30]:
@@ -85,7 +98,7 @@ def reports_context(data_dir: Path) -> dict:
 
 
 def strategy_context(conf, store, data_dir: Path) -> dict:
-    return {"cards": build_strategy_view(conf, store, _load(data_dir))}
+    return {"cards": build_strategy_view(conf, store, _load(store))}
 
 
 def settings_context(conf) -> dict:

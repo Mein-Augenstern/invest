@@ -153,7 +153,7 @@ class TestPullAndEvaluate:
             pull_calls.append(conf)
             log("[OK] 模拟拉数完成")
 
-        def fake_evaluate(conf, store, trades):
+        def fake_evaluate(conf, store, trades, member_id=None):
             eval_calls.append(conf)
             return 7
 
@@ -163,6 +163,9 @@ class TestPullAndEvaluate:
         from invest.data.local import LocalStore
 
         store = LocalStore(tmp_path / "invest.db")
+        # S11：评估按会员循环——需先有会员流水才会触发评估
+        store.append_trades(1, [{"date": "2026-01-05", "instrument_id": "csi_dividend_pension",
+                                 "action": "contribute", "quantity": 1000, "price": 1.0}])
         n = pull_job.pull_and_evaluate(tmp_path, cfg.CONFIG_DIR / "portfolio.example.yaml",
                                        store, log=logs.append)
         assert n == 7
@@ -176,12 +179,15 @@ class TestPullAndEvaluate:
 
         monkeypatch.setattr(pipeline, "run_pull", lambda *a, **k: None)
         monkeypatch.setattr(reporting, "evaluate_and_store_signals",
-                            lambda *a: (_ for _ in ()).throw(RuntimeError("eval boom")))
+                            lambda *a, **k: (_ for _ in ()).throw(RuntimeError("eval boom")))
 
         from invest.data.local import LocalStore
 
+        store = LocalStore(tmp_path / "invest.db")
+        store.append_trades(1, [{"date": "2026-01-05", "instrument_id": "csi_dividend_pension",
+                                 "action": "contribute", "quantity": 1000, "price": 1.0}])
         n = pull_job.pull_and_evaluate(tmp_path, cfg.CONFIG_DIR / "portfolio.example.yaml",
-                                       LocalStore(tmp_path / "invest.db"))
+                                       store)
         assert n == -1
 
 

@@ -416,12 +416,15 @@ def build_dashboard_data(conf: Portfolio, store: LocalStore, trades: list[Trade]
 
 # ---------- 周报（CLI 与 Web 共用单一实现） ----------
 
-def evaluate_and_store_signals(conf: Portfolio, store: LocalStore, trades: list[Trade]) -> int:
-    """评估并落库信号（显式动作：仅信号页/信号命令/周报生成时调用，页面刷新不触发）。"""
+def evaluate_and_store_signals(conf: Portfolio, store: LocalStore, trades: list[Trade], member_id: int | None = None) -> int:
+    """评估并落库信号（显式动作：仅信号页/信号命令/周报生成时调用，页面刷新不触发）。
+
+    S11：member_id 传入时信号归属该会员（不传回落默认会员，兼容 CLI 单用户口径）。
+    """
     from .strategy import evaluate_all
 
     signals = evaluate_all(conf, store, trades)
-    return len(store.add_signals(signals))
+    return len(store.add_signals(signals, member_id))
 
 
 def render_signals_markdown(conf: Portfolio, store: LocalStore, today: str | None = None) -> str:
