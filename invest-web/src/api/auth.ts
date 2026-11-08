@@ -24,16 +24,20 @@ interface StarEnvelope<T> {
   data?: T
 }
 
-async function unwrap<T>(p: Promise<StarEnvelope<T>>): Promise<T> {
+async function unwrap<T>(p: Promise<StarEnvelope<T>>): Promise<T | null> {
   const res = await p
-  if (res.code !== 0 || !res.data) throw new ApiError(res.code || -1, res.message || '登录服务异常')
-  return res.data
+  // 星壳判定只看 code：注册等端点成功时 data 合法地为 null（2026-11-08 实证：
+  // 把 data:null 当失败会把 message「成功」塞进红色告警）
+  if (res.code !== 0) throw new ApiError(res.code || -1, res.message || '登录服务异常')
+  return res.data ?? null
 }
 
-export function loginByPassword(username: string, password: string): Promise<LoginVO> {
-  return unwrap(
+export async function loginByPassword(username: string, password: string): Promise<LoginVO> {
+  const vo = await unwrap(
     request<StarEnvelope<LoginVO>>({ url: '/api/auth/login', method: 'POST', data: { username, password }, rawPath: true, timeoutMs: 15_000 }),
   )
+  if (!vo || !vo.token) throw new ApiError(-1, '登录响应缺少 token')
+  return vo
 }
 
 export async function registerAccount(username: string, password: string, nickname?: string): Promise<void> {

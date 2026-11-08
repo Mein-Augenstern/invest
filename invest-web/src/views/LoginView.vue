@@ -4,6 +4,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import { Lock, User } from '@element-plus/icons-vue'
 import { errMsg } from '@/api/client'
 import { registerAccount } from '@/api/auth'
@@ -28,6 +29,8 @@ async function submit() {
     if (mode.value === 'register') {
       if (password.value !== confirm.value) throw new Error('两次输入的密码不一致')
       await registerAccount(username.value.trim(), password.value, username.value.trim())
+      // 注册成功的经典后续：绿色提示 → 自动登录 → 进入产品
+      ElMessage.success('注册成功，正在进入…')
     }
     await auth.login(username.value, password.value)
     const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/'
