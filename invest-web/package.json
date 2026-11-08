@@ -1,0 +1,37 @@
+{
+  "name": "invest-web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "invest PC Web 端（S10）：Vue3 + Element Plus + ECharts，部署 Cloudflare Pages",
+  "engines": {
+    "node": ">=20.19"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc --noEmit && vite build",
+    "typecheck": "vue-tsc --noEmit",
+    "test": "vitest run",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@element-plus/icons-vue": "^2.3.2",
+    "echarts": "^5.6.0",
+    "element-plus": "^2.14.8",
+    "pinia": "^2.3.1",
+    "vue": "^3.5.45",
+    "vue-router": "^4.6.4"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.4",
+    "@vue/test-utils": "^2.4.6",
+    "jsdom": "^25.0.1",
+    "typescript": "~5.6.3",
+    "vite": "^6.4.5",
+    "vitest": "^3.2.7",
+    "vue-tsc": "^2.2.12"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild", "vue-demi"]
+  }
+}

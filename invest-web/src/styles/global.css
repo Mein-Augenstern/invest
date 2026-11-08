@@ -1,0 +1,110 @@
+/*
+ * invest-web 设计系统：企业内部平台风（S10 / product.md §4 UI 规范）
+ * 灰底白面板 · 细边框 · 主色 #1652a8 · 红涨绿跌 · 无渐变 / 无 emoji / 无重阴影
+ */
+:root {
+  --iv-bg: #f5f6f8;
+  --iv-panel: #ffffff;
+  --iv-border: #e5e6eb;
+  --iv-text: #1d2129;
+  --iv-text-2: #4e5969;
+  --iv-text-3: #86909c;
+  --iv-primary: #1652a8;
+  --iv-rise: #d54941; /* 盈利 / 上涨：红 */
+  --iv-fall: #2e9e5b; /* 亏损 / 下跌：绿 */
+  --iv-warn: #d46b08;
+  --iv-radius: 8px;
+
+  /* Element Plus 主色对齐 */
+  --el-color-primary: #1652a8;
+  --el-color-primary-light-3: #5c86c2;
+  --el-color-primary-light-5: #8aa9d4;
+  --el-color-primary-light-7: #b9cbe5;
+  --el-color-primary-light-8: #d0dcee;
+  --el-color-primary-light-9: #e8eef7;
+  --el-color-primary-dark-2: #124287;
+  --el-border-radius-base: 6px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--iv-bg);
+  color: var(--iv-text);
+  font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', Arial, sans-serif;
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 盈亏着色（与 utils/format.ts pnlClass 对应） */
+.danger {
+  color: var(--iv-rise) !important;
+}
+.success {
+  color: var(--iv-fall) !important;
+}
+.muted {
+  color: var(--iv-text-3);
+}
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+/* 面板：页面内容的基本容器 */
+.panel {
+  background: var(--iv-panel);
+  border: 1px solid var(--iv-border);
+  border-radius: var(--iv-radius);
+  padding: 20px;
+}
+.panel + .panel,
+.panel-gap {
+  margin-top: 16px;
+}
+.panel-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0 0 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* 栅格：指标卡等宽排布 */
+.grid {
+  display: grid;
+  gap: 16px;
+}
+.grid-4 {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.grid-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.grid-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+@media (max-width: 1200px) {
+  .grid-4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* 表格：表头灰底 600 字重，无斑马纹 */
+.el-table th.el-table__cell {
+  background: #f7f8fa !important;
+  color: var(--iv-text-2);
+  font-weight: 600;
+}
+.el-table .cell {
+  font-variant-numeric: tabular-nums;
+}
