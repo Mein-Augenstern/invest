@@ -1,27 +1,31 @@
 /**
- * 鉴权状态（S10 AC-1）：token 输入 → 以需鉴权的轻量端点校验 → 持久化。
- * 校验选 /pull/status 而非 /overview：后者会在数据过期时触发后台自动拉数（副作用）。
+ * 鉴权状态（S11）：star 会员账密登录 → JWT 存本机 localStorage。
+ * 校验用需鉴权的轻量端点（/pull/status，无副作用——/overview 会触发后台拉数）。
  */
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { ApiError } from '@/api/client'
-import { clearToken, getToken, setToken } from '@/api/config'
+import { ApiError, errMsg } from '@/api/client'
+import { loginByPassword } from '@/api/auth'
+import { clearToken, getMember, getToken, setMember, setToken, type StoredMember } from '@/api/config'
 import { getPullStatus } from '@/api/invest'
 
 export const useAuthStore = defineStore('auth', () => {
   const authed = ref(getToken().length > 0)
+  const member = ref<StoredMember | null>(getMember())
 
-  async function login(token: string): Promise<void> {
-    const t = token.trim()
-    if (!t) throw new ApiError(0, '请输入 token')
-    setToken(t)
+  async function login(username: string, password: string): Promise<void> {
+    if (!username.trim() || !password) throw new ApiError(0, '请输入账号与密码')
+    const vo = await loginByPassword(username.trim(), password)
+    setToken(vo.token)
+    setMember({ id: vo.member.id, username: vo.member.username, nickname: vo.member.nickname })
     try {
       await getPullStatus()
       authed.value = true
+      member.value = getMember()
     } catch (e) {
       clearToken()
       authed.value = false
-      if (e instanceof ApiError && e.status === 401) throw new ApiError(401, 'token 无效，请核对后重试')
+      if (e instanceof ApiError && e.status === 401) throw new ApiError(401, '登录成功但服务校验失败，请稍后重试')
       throw e
     }
   }
@@ -29,6 +33,7 @@ export const useAuthStore = defineStore('auth', () => {
   function logout(): void {
     clearToken()
     authed.value = false
+    member.value = null
   }
 
   /** client 收到 401 时同步状态（token 已被 client 清除） */
@@ -36,5 +41,5 @@ export const useAuthStore = defineStore('auth', () => {
     authed.value = false
   }
 
-  return { authed, login, logout, markExpired }
+  return { authed, member, login, logout, markExpired, errMsg }
 })

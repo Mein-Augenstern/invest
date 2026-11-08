@@ -7,6 +7,12 @@
   },
   "pages": [
     {
+      "path": "pages/login/login",
+      "style": {
+        "navigationBarTitleText": "登录"
+      }
+    },
+    {
       "path": "pages/overview/overview",
       "style": {
         "navigationBarTitleText": "总览",

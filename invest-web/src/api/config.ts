@@ -3,6 +3,13 @@
  * 与小程序 config.ts 的区别：PC 端恒为同源直连，无服务器地址/网关模式配置。
  */
 const TOKEN_KEY = 'invest_web_token'
+const MEMBER_KEY = 'invest_web_member'
+
+export interface StoredMember {
+  id: number
+  username?: string
+  nickname?: string
+}
 
 export function getToken(): string {
   try {
@@ -16,8 +23,22 @@ export function setToken(token: string): void {
   localStorage.setItem(TOKEN_KEY, token.trim())
 }
 
+export function getMember(): StoredMember | null {
+  try {
+    const raw = localStorage.getItem(MEMBER_KEY)
+    return raw ? (JSON.parse(raw) as StoredMember) : null
+  } catch {
+    return null
+  }
+}
+
+export function setMember(m: StoredMember): void {
+  localStorage.setItem(MEMBER_KEY, JSON.stringify(m))
+}
+
 export function clearToken(): void {
   localStorage.removeItem(TOKEN_KEY)
+  localStorage.removeItem(MEMBER_KEY)
 }
 
 export function hasToken(): boolean {

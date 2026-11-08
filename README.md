@@ -9,13 +9,15 @@
 
 ## 公网访问
 
-| 端 | 地址 | 说明 |
-|----|------|------|
-| **PC Web（投研管理台）** | **https://invest-6eq.pages.dev** | Cloudflare Pages 免费托管 · HTTPS；token 门禁（会员化 S11 进行中，将切换 star 账号登录） |
-| H5（移动网页） | http://47.92.235.34/ | ECS nginx 同源部署；首访在「我的」页输入 token |
-| 微信小程序 | 体验版 | uni-app 构建；微信登录走 star 网关 |
+| 端 | 地址 | 登录方式 |
+|----|------|----------|
+| **PC 投研管理台** | **http://47.92.235.34/** | star 会员账号密码（登录页可注册） |
+| H5（移动网页） | http://47.92.235.34/h5/ | 同上（浏览器）；微信内打开自动登录 |
+| 微信小程序 | 体验版 | 微信静默登录（设置页服务器切 gateway 模式 `http://47.92.235.34`） |
 
-> PC/H5 访问 token 见部署密钥说明（运营者持有，不入库）；
+> 统一入口：ECS nginx 全同源（无 CORS/无隧道依赖）；
+> 会员/登录由 star 平台基础服务承担（网关+会员部署于运营者 Mac Docker，
+> frp 出站隧道接入）。~~invest-6eq.pages.dev~~ 已退役（过渡形态）。
 > 产品定位与会员化路线见 [docs/prd/product.md](docs/prd/product.md) §6。
 
 ## 布局
@@ -40,13 +42,16 @@ cd ../invest-web && pnpm install && pnpm dev                     # http://localh
 cd ../invest-miniapp && pnpm install --dangerously-allow-all-builds && pnpm build:mp-weixin
 ```
 
-## 请求链路（当前 · S11 会员化后以 star 网关为统一入口）
+## 请求链路（S11 会员化 · 统一入口）
 
 ```
-PC Web（pages.dev）──HTTPS──▶ cloudflared 隧道 ──▶ invest :8790（token 鉴权，CORS 单点放行）
-H5（ECS 同源）──▶ nginx /api 反代 ──▶ invest :8790
-微信小程序 ──▶ star 网关（wx-login → star JWT）──▶ /api/invest/** ──▶ invest :8790（纵深校验）
-家庭提醒 ──▶ star reminder 服务
+PC / H5 / 小程序 ──▶ http://47.92.235.34/（ECS nginx · 全同源 · 登录限流）
+                     ├─ /                    → PC 投研管理台（SPA 静态）
+                     ├─ /h5/                 → 移动端 H5
+                     ├─ /api/invest/**       → invest :8790（star JWT 鉴权，ECS）
+                     └─ /api/auth|member|family|reminder/** → frp 出站隧道
+                                                          → Mac star 网关（JWT 签发）
+                                                          → 会员/家庭/提醒服务
 pulljob / 定时任务（starsite 同语义分布式锁）──▶ 行情源四级兜底
 ```
 

@@ -1,9 +1,16 @@
 <script setup lang="ts">
 import { onLaunch } from "@dcloudio/uni-app";
 import { silentWxLogin } from "./api/auth";
+import { getMode, getToken } from "./api/config";
 // 启动静默登录（gateway 模式：wx.login → star 网关换 JWT；失败不打扰，接口层 401 会再触发）
 onLaunch(() => {
   silentWxLogin();
+  // H5（浏览器无微信环境）：gateway 模式且无 token 时引导到账密登录页（S11 三端登录）
+  // #ifdef H5
+  if (getMode() === "gateway" && !getToken()) {
+    uni.reLaunch({ url: "/pages/login/login" });
+  }
+  // #endif
 });
 </script>
 

@@ -79,8 +79,16 @@ export async function loginByPassword(username: string, password: string): Promi
 }
 
 // 401 自愈钩子：client 收到 401 时已清空 token，silentWxLogin 会真实走一次登录（单飞，
-// 多请求并发 401 共享同一次重登），随后 client 用新 token 重试原请求一次
-registerRelogin(() => silentWxLogin())
+// 多请求并发 401 共享同一次重登），随后 client 用新 token 重试原请求一次。
+// H5（浏览器无微信环境）改为引导到账密登录页，重登由用户完成。
+registerRelogin(async () => {
+  // #ifdef H5
+  uni.reLaunch({ url: "/pages/login/login" });
+  return false;
+  // #endif
+  // eslint-disable-next-line no-unreachable
+  return silentWxLogin();
+})
 
 export function isLoggedIn(): boolean {
   return getMode() === 'direct' || !!getToken()

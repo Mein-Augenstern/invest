@@ -1,5 +1,5 @@
 <!--
-  设置（对齐小程序 settings「我的」）：访问与安全（token 仅存本机 / 退出登录）· GLM 智能（Key 状态与保存）·
+  设置（对齐小程序 settings「我的」）：访问与安全（star 会员登录态 / 退出登录）· GLM 智能（Key 状态与保存）·
   数据拉取（立即拉数 + 3s 轮询 + 日志）· 备份与数据健康（导出 zip / 文件行数与损坏行）· 与小程序的功能差异说明。
   各卡独立三态：任一接口失败只影响所在卡片，退出登录始终可用。
 -->
@@ -232,11 +232,11 @@ onBeforeUnmount(stopPullPolling)
         <el-tag :type="auth.authed ? 'success' : 'info'" size="small">{{ auth.authed ? '已登录' : '未登录' }}</el-tag>
       </div>
       <ul class="tips">
-        <li>访问 token 仅保存在本机浏览器（localStorage），不写入构建产物、不发送给第三方；请求时以 Bearer 头携带。</li>
-        <li>更换 token：先退出登录（同时清除本机 token），再在登录页输入新 token 即可。</li>
-        <li>在公共或他人电脑上使用后，请务必退出登录。</li>
+        <li>会员账号经 star 平台登录，登录凭据（JWT）仅保存在本机浏览器（localStorage），不写入构建产物。</li>
+        <li>当前会员：{{ auth.member?.nickname || auth.member?.username || '—' }}（member #{{ auth.member?.id ?? '—' }}）。</li>
+        <li>修改密码请前往小程序「我的」页；在公共电脑上使用后请务必退出登录。</li>
       </ul>
-      <el-popconfirm title="退出后需重新输入 token 才能访问，确定退出？" confirm-button-text="退出" :width="260" @confirm="logout">
+      <el-popconfirm title="退出后需重新登录才能访问，确定退出？" confirm-button-text="退出" :width="260" @confirm="logout">
         <template #reference>
           <el-button type="danger" plain :icon="SwitchButton">退出登录</el-button>
         </template>

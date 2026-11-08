@@ -40,10 +40,12 @@ export interface RequestOptions {
   data?: unknown
   params?: Record<string, string | number | undefined>
   timeoutMs?: number
+  /** true = url 为网关完整路径（如 /api/auth/**），不拼 invest 业务前缀 */
+  rawPath?: boolean
 }
 
-export function buildUrl(url: string, params?: RequestOptions['params']): string {
-  let full = `${API_BASE}${BASE_PATH}${url}`
+export function buildUrl(url: string, params?: RequestOptions['params'], rawPath = false): string {
+  let full = rawPath ? url : `${API_BASE}${BASE_PATH}${url}`
   if (params) {
     const qs = Object.entries(params)
       .filter(([, v]) => v !== undefined && v !== '')
@@ -96,7 +98,7 @@ export async function request<T = unknown>(opts: RequestOptions): Promise<T> {
     headers['content-type'] = 'application/json'
     body = JSON.stringify(opts.data)
   }
-  const res = await send(buildUrl(opts.url, opts.params), { method, headers, body }, opts.timeoutMs ?? DEFAULT_TIMEOUT_MS)
+  const res = await send(buildUrl(opts.url, opts.params, opts.rawPath ?? false), { method, headers, body }, opts.timeoutMs ?? DEFAULT_TIMEOUT_MS)
   if (!res.ok) throw await errorFrom(res)
   return (await res.json()) as T
 }

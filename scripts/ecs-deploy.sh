@@ -45,10 +45,10 @@ ssh ecs "docker network create invest_net 2>/dev/null || true; \
   docker run -d --name invest-app --restart unless-stopped -m 350m --network invest_net \
   -p 127.0.0.1:8790:8790 \
   --env-file /opt/invest/secrets/app.env \
-  -e INVEST_AUTH_MODE=token \
+  -e INVEST_AUTH_MODE=star \
   -e INVEST_DATA_DIR=/data \
   -e INVEST_GLM_KEY_FILE=/data/glm.local.env \
-  -e INVEST_HOSTS_EXTRA='127.0.0.1,47.92.235.34,*.trycloudflare.com' \
+  -e INVEST_HOSTS_EXTRA=127.0.0.1,47.92.235.34 \
   -e TZ=Asia/Shanghai \
   -v /opt/invest/data:/data \
   -v /opt/invest/config:/app/config:ro \
@@ -60,11 +60,11 @@ sleep 10
 scp -q "$SCRIPT_DIR/ecs-invest-h5.conf" ecs:/etc/nginx/conf.d/invest-h5.conf
 ssh ecs "nginx -t && nginx -s reload"
 
-# ---- 验证：无 token 必须 401（鉴权边界生效）----
+# ---- 验证：无 JWT 必须 401（star 鉴权边界生效）----
 echo "=== 验证 ==="
-curl -s -m 10 -o /dev/null -w "H5: %{http_code}\n" "http://47.92.235.34/"
-curl -s -m 10 -o /dev/null -w "API 无 token（预期 401）: %{http_code}\n" "http://47.92.235.34/api/invest/overview"
-echo "手机浏览器访问：http://47.92.235.34/（首访在「我的」页输入 token）"
+curl -s -m 10 -o /dev/null -w "PC 管理台: %{http_code}\n" "http://47.92.235.34/"
+curl -s -m 10 -o /dev/null -w "API 无 JWT（预期 401）: %{http_code}\n" "http://47.92.235.34/api/invest/overview"
+echo "访问：http://47.92.235.34/（PC 管理台 · 账密登录）  http://47.92.235.34/h5/（移动端）"
 
 # ---- H5 构建命令（本地，注释状态；token 不嵌入产物）----
 # cd invest-miniapp && 写 .env.production.local（三行 VITE_*，token 留空）：

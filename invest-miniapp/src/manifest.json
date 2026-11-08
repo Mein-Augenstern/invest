@@ -16,6 +16,9 @@
   },
   "h5": {
     "title": "invest",
+    "router": {
+      "base": "/h5/"
+    },
     "devServer": {
       "port": 5174
     }

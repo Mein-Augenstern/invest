@@ -114,4 +114,26 @@
 
 ## 验收记录
 
-（实现后填写）
+**2026-11-08 · P1 会员化落地（AC-1/2/3/6 首批通过，统一入口形态）**
+
+部署事实（用户拍板：Mac 为 star 基础服务正式部署机，替代"全部上 ECS"的内存紧方案）：
+
+- AC-1 ✅（形态修订）：star 网关+member 运行于 Mac Docker（32G，compose
+  `restart: unless-stopped`），经 frp 出站隧道接入 ECS 统一入口；
+  网关 `INVEST_UPSTREAM` 已指回 ECS（消除旧 Mac 数据面）。
+  ⚠️ family 未起：容器构建依赖本机 m2 的 starsite 组件（Maven Central 发布待办），
+  其接口（家庭成员列表）此前即 503，非本次回归
+- AC-2 ✅：invest-app `INVEST_AUTH_MODE=star` + 共享 `INVEST_JWT_SECRET`；
+  无 JWT→401 / 伪造 JWT→401 / 有效 star JWT→200（实测三态）；静态 token 退役
+- AC-3 ✅（PC+H5）：PC 登录页账密登录/注册（经同源 /api/auth/**）；
+  H5 新增账密登录页（浏览器无微信环境）+ 401 回登录页；JWT 仅存本机。
+  小程序端待用户在设置页切换 gateway 模式（wx-login 静默，代码既有）
+- AC-6 ✅（限流部分）：nginx `/api/auth/` 每 IP 10r/m（burst 10）→ 实测第 12 次起 429；
+  审计日志未做（余项）
+- 统一入口：`http://47.92.235.34/`（PC 根 + /h5/ + 双 API 路由，全同源）；
+  trycloudflare 隧道与 pages.dev 退役（临时方案清理）
+- 运营者账号：member #31（凭据在 `scripts/secrets/member.env`，gitignored）
+
+**余项（P2 数据隔离 = 本 Spec 核心）**：AC-4 member_id 全链路隔离、AC-5 角色
+（star member 无 role 字段，拟 invest 侧 ADMIN_MEMBER_IDS）、AC-7 提醒上云、
+AC-8 迁移对账、审计日志、family 构建（依赖组件发布）。
