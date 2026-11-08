@@ -137,3 +137,25 @@
 **余项（P2 数据隔离 = 本 Spec 核心）**：AC-4 member_id 全链路隔离、AC-5 角色
 （star member 无 role 字段，拟 invest 侧 ADMIN_MEMBER_IDS）、AC-7 提醒上云、
 AC-8 迁移对账、审计日志、family 构建（依赖组件发布）。
+
+**2026-11-08 · P2 数据隔离落地（AC-4/5/6/8 全过，核心闭环）**
+
+- AC-4 ✅：trades 迁库（新表含自增 id——顺带根除整行匹配删除的历史包袱）；
+  signals/diary/instruments 加 member 维度（diary 唯一键 (member,date)、
+  instruments 主键 (member,id)，旧库自动迁移幂等）；31 个路由全隔离；
+  行情序列/指数目录保持公共缓存。pytest 9 项越权回归 + 生产双账号验收：
+  运营者见 2 条流水/资产 7788，新注册会员 0 条/None/越权删除 409
+- AC-5 ✅（最小形态）：INVEST_ADMIN_MEMBER_IDS 守卫 + /admin/members +
+  /admin/audit；star member 无 role 字段，角色在 invest 侧表达
+- AC-6 ✅：写操作审计（trade/diary/instrument/nav/report/backup/signal，
+  不含金额明文）；登录限流见 P1 记录
+- AC-8 ✅：`invest.migrate_trades` 幂等迁移（逐行一致跳过/不一致拒绝）+
+  迁移前备份 + 行数与现金流对账；ECS MySQL 实迁 2 行 -5500 双向吻合
+- 工程修复：SQLite WAL 改为仅初始化设置（逐连接 journal_mode 的独占锁
+  与周报线程并发必现 database is locked）；备份导出重写为会员自身数据 zip
+  （旧整目录导出在多会员下是泄密面）
+- 测试基线：**188 全绿**（179 既有零改动 + 9 新增隔离），提交 `bf7e749`
+
+**仍在余项**：AC-7 提醒经 nginx→frp→Mac 网关链路已通（reminder 服务在跑），
+「提醒上云」语义已被「Mac=正式部署机」拓扑满足；family 服务构建依赖
+m2-local 预置仓库（组件发布 Maven Central 后回收该 workaround）。
