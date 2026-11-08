@@ -417,6 +417,20 @@ class LocalStore:
         with self._conn() as conn:
             return [int(r[0]) for r in conn.execute("SELECT DISTINCT member_id FROM trades ORDER BY member_id").fetchall()]
 
+    def search_catalog(self, query: str, limit: int = 20) -> list[tuple]:
+        """指数目录模糊搜索（标的新增的搜标的用）：精确 > 简称包含 > 全称包含。"""
+        q = "%" + query + "%"
+        with self._conn() as conn:
+            for sql, param in (
+                ("SELECT index_code, name, full_name FROM csi_catalog WHERE name = ? OR index_code = ? LIMIT 50", (query, query)),
+                ("SELECT index_code, name, full_name FROM csi_catalog WHERE name LIKE ? LIMIT 50", (q,)),
+                ("SELECT index_code, name, full_name FROM csi_catalog WHERE full_name LIKE ? LIMIT 50", (q,)),
+            ):
+                rows = conn.execute(sql, param).fetchall()
+                if rows:
+                    return rows[:limit]
+        return []
+
     # ---- 审计（S11 AC-6：who/what/when/traceId，不含金额明文） ----
 
     def add_audit(self, member_id: int, action: str, detail: str = "", trace_id: str = "") -> None:

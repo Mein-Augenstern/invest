@@ -170,6 +170,13 @@ export function parseInstrumentImage(file: File): Promise<{ text: string; instru
   return upload('/instruments/parse-image', file)
 }
 
+/** 搜索标的目录（中证指数 2388 个）→ 一键加入 */
+export function searchInstrumentCatalog(q: string): Promise<{
+  results: { code: string; name: string; full_name: string; benchmark_index: string; already_added: boolean }[]
+}> {
+  return request({ url: '/instruments/catalog', params: { q } })
+}
+
 /* ---------- 截图识别 ---------- */
 
 export function ocrTrades(file: File): Promise<OcrResult> {

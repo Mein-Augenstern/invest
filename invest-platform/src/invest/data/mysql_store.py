@@ -461,6 +461,22 @@ class MySQLStore:
                 cur.execute("SELECT DISTINCT member_id FROM trades ORDER BY member_id")
                 return [int(r[0]) for r in cur.fetchall()]
 
+    def search_catalog(self, query: str, limit: int = 20) -> list[tuple]:
+        """指数目录模糊搜索（标的新增的搜标的用）。"""
+        q = "%" + query + "%"
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                for sql, param in (
+                    ("SELECT index_code, name, full_name FROM csi_catalog WHERE name = %s OR index_code = %s LIMIT 50", (query, query)),
+                    ("SELECT index_code, name, full_name FROM csi_catalog WHERE name LIKE %s LIMIT 50", (q,)),
+                    ("SELECT index_code, name, full_name FROM csi_catalog WHERE full_name LIKE %s LIMIT 50", (q,)),
+                ):
+                    cur.execute(sql, param)
+                    rows = cur.fetchall()
+                    if rows:
+                        return [tuple(r) for r in rows[:limit]]
+        return []
+
     # ---- 审计（S11 AC-6） ----
 
     def add_audit(self, member_id: int, action: str, detail: str = "", trace_id: str = "") -> None:

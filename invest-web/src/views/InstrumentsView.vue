@@ -3,7 +3,7 @@
   从截图识别（OCR + AI 反显表单，依赖 macOS Vision，Linux 部署 422 属预期降级）· 删除双保护（持仓 409 / yaml 种子 404）。
 -->
 <script setup lang="ts">
-import { computed, nextTick, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import {
   ElMessage,
   ElMessageBox,
@@ -12,11 +12,11 @@ import {
   type UploadFile,
   type UploadInstance,
 } from 'element-plus'
-import { Picture, Plus } from '@element-plus/icons-vue'
+import { Picture, Plus, Search as SearchIcon } from '@element-plus/icons-vue'
 import PageHeader from '@/components/PageHeader.vue'
 import StateBlock from '@/components/StateBlock.vue'
 import { ApiError, errMsg } from '@/api/client'
-import { deleteInstrument, getInstruments, parseInstrumentImage, saveInstrument } from '@/api/invest'
+import { deleteInstrument, getInstruments, parseInstrumentImage, saveInstrument, searchInstrumentCatalog } from '@/api/invest'
 import type { InstrumentForm, InstrumentRow } from '@/types'
 import { fmtQty } from '@/utils/format'
 
@@ -263,6 +263,53 @@ async function onShot(uploadFile: UploadFile) {
   }
 }
 
+/* ---------- 搜索标的目录（中证指数 2388 个）→ 一键加入 ---------- */
+
+const searchDialog = ref(false)
+const searchQuery = ref('')
+const searchResults = ref<{ code: string; name: string; full_name: string; benchmark_index: string; already_added: boolean }[]>([])
+const searching = ref(false)
+let searchTimer: ReturnType<typeof setTimeout> | null = null
+
+function openSearch() {
+  searchDialog.value = true
+  searchQuery.value = ''
+  searchResults.value = []
+}
+
+watch(searchQuery, (q) => {
+  if (searchTimer) clearTimeout(searchTimer)
+  if (!q.trim() || q.trim().length < 2) {
+    searchResults.value = []
+    return
+  }
+  searchTimer = setTimeout(async () => {
+    searching.value = true
+    try {
+      const r = await searchInstrumentCatalog(q.trim())
+      searchResults.value = r.results
+    } catch {
+      searchResults.value = []
+    } finally {
+      searching.value = false
+    }
+  }, 300)
+})
+
+/** 从搜索结果一键加入：预填新增弹窗 */
+function addFromCatalog(item: { code: string; name: string; benchmark_index: string }) {
+  searchDialog.value = false
+  openDialog()
+  form.name = item.name
+  form.code = item.code
+  form.benchmark_index = item.benchmark_index
+  // 智能推测类型
+  if (item.code.startsWith('s') || item.code.startsWith('sh') || item.code.startsWith('sz')) form.type = 'stock'
+  else if (item.code.length === 6 && /^[01]/.test(item.code)) form.type = 'etf'
+  else form.type = 'open_end_fund'
+  ElMessage.success(`已填入「${item.name}」，确认账户后保存`)
+}
+
 /* ---------- 删除 ---------- */
 
 async function remove(row: InstrumentRow) {
@@ -312,7 +359,8 @@ onMounted(load)
       >
         <el-button :icon="Picture" :loading="parsing">{{ parsing ? '识别中…' : '从截图识别' }}</el-button>
       </el-upload>
-      <el-button type="primary" :icon="Plus" @click="openDialog()">新增标的</el-button>
+      <el-button @click="openSearch">搜索标的</el-button>
+      <el-button type="primary" :icon="Plus" @click="openDialog()">手动新增</el-button>
     </template>
   </PageHeader>
 
@@ -399,6 +447,37 @@ onMounted(load)
     </StateBlock>
   </div>
 
+  <!-- 搜索标的弹窗 -->
+  <el-dialog v-model="searchDialog" title="搜索标的" width="560px" :close-on-click-modal="false">
+    <el-input
+      v-model="searchQuery"
+      placeholder="输入名称或代码，如：红利、消费、科技、000300"
+      clearable
+      size="large"
+      :prefix-icon="SearchIcon"
+    />
+    <div class="search-results">
+      <div v-if="searching" class="muted search-empty"><el-skeleton :rows="3" animated /></div>
+      <div v-else-if="!searchQuery.trim() || searchQuery.trim().length < 2" class="muted search-empty">
+        输入至少 2 个字开始搜索（覆盖 2388 个中证指数/基金基准）
+      </div>
+      <div v-else-if="!searchResults.length" class="muted search-empty">没有找到「{{ searchQuery }}」，试试其他关键词或手动新增</div>
+      <div
+        v-for="item in searchResults"
+        :key="item.code"
+        class="search-item"
+        @click="!item.already_added && addFromCatalog(item)"
+      >
+        <div class="si-info">
+          <div class="si-name">{{ item.name }}</div>
+          <div class="si-code mono">{{ item.code }} · {{ item.full_name }}</div>
+        </div>
+        <el-tag v-if="item.already_added" type="info" size="small">已添加</el-tag>
+        <el-button v-else type="primary" size="small">加入</el-button>
+      </div>
+    </div>
+  </el-dialog>
+
   <el-dialog v-model="dialog" :title="editing ? '编辑标的' : '新增标的'" width="560px" :close-on-click-modal="false">
     <el-collapse v-if="ocrText" v-model="ocrOpen" class="ocr-fold">
       <el-collapse-item title="识别原文（核对用）" name="text">
@@ -438,6 +517,40 @@ onMounted(load)
 </template>
 
 <style scoped>
+.search-results {
+  margin-top: 16px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+.search-empty {
+  text-align: center;
+  padding: 40px 0;
+  font-size: 13px;
+}
+.search-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border: 1px solid var(--iv-border);
+  border-radius: 8px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.search-item:hover {
+  border-color: var(--iv-primary);
+  background: var(--el-color-primary-light-9);
+}
+.si-name {
+  font-weight: 600;
+  font-size: 14px;
+}
+.si-code {
+  font-size: 12px;
+  color: var(--iv-text-3);
+  margin-top: 2px;
+}
 .mono {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 13px;
