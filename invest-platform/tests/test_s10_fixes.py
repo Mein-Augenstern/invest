@@ -99,3 +99,48 @@ def test_reportjob_uses_default_store_factory(tmp_path, monkeypatch):
             break
         time.sleep(0.05)
     assert calls, "reportjob._run 必须经 default_store 工厂构造 store"
+
+
+def test_host_check_suffix_entry(tmp_path):
+    """Host 白名单 `*.suffix` 条目：隧道随机子域放行，裸域/伪造后缀仍 403。"""
+    app = create_app(
+        allowed_hosts={"127.0.0.1", "*.trycloudflare.com"},
+        config_path=CONFIG,
+        data_dir=tmp_path,
+        mp_token="t",
+    )
+    c = TestClient(app)
+    assert c.get("/api/invest/ping", headers={"Host": "random-words-42.trycloudflare.com"}).status_code == 200
+    assert c.get("/api/invest/ping", headers={"Host": "evil.example.org"}).status_code == 403
+    assert c.get("/api/invest/ping", headers={"Host": "trycloudflare.com"}).status_code == 403  # 仅子域
+    assert (
+        c.get("/api/invest/ping", headers={"Host": "x-trycloudflare.com.attacker.org"}).status_code == 403
+    )  # 后缀必须是完整标签
+
+
+def test_cors_single_origin_opt_in(tmp_path, monkeypatch):
+    """S10 过渡形态：INVEST_ALLOWED_ORIGINS 精确放行单一 origin（预检 + 实际响应带头）。"""
+    monkeypatch.setenv("INVEST_ALLOWED_ORIGINS", "https://invest-demo.pages.dev")
+    app = create_app(allowed_hosts={"testserver"}, config_path=CONFIG, data_dir=tmp_path, mp_token="t")
+    c = TestClient(app)
+
+    pre = c.options(
+        "/api/invest/ping",
+        headers={"Origin": "https://invest-demo.pages.dev", "Access-Control-Request-Method": "GET"},
+    )
+    assert pre.status_code == 200
+    assert pre.headers.get("access-control-allow-origin") == "https://invest-demo.pages.dev"
+
+    r = c.get("/api/invest/ping", headers={"Origin": "https://invest-demo.pages.dev"})
+    assert r.headers.get("access-control-allow-origin") == "https://invest-demo.pages.dev"
+    # 未登记 origin 不放行（浏览器侧表现为 CORS 拦截）
+    r2 = c.get("/api/invest/ping", headers={"Origin": "https://evil.example.org"})
+    assert r2.headers.get("access-control-allow-origin") != "https://evil.example.org"
+
+
+def test_cors_off_by_default(tmp_path, monkeypatch):
+    """未配置 env 时无 CORS 头——维持"无 CORS 即防御"的同源形态。"""
+    monkeypatch.delenv("INVEST_ALLOWED_ORIGINS", raising=False)
+    app = create_app(allowed_hosts={"testserver"}, config_path=CONFIG, data_dir=tmp_path, mp_token="t")
+    r = TestClient(app).get("/api/invest/ping", headers={"Origin": "https://any.pages.dev"})
+    assert "access-control-allow-origin" not in r.headers

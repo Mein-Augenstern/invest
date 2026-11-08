@@ -100,6 +100,19 @@ def test_mp_trades_list_labels_and_roundtrip(tmp_path):
     assert len(c.get("/api/invest/trades").json()["trades"]) == 1
 
 
+def test_mp_trades_delete_fee_empty_vs_zero(tmp_path):
+    """回归（2026-11-08 PC 端 E2E 实证）：CSV 无费用存空串、API 列表回 0——
+    数值列空值按 0 归一，否则"记一笔无费用 → 删除"必 409。"""
+    _seed_nav(tmp_path)
+    c = _make_client(tmp_path)
+    c.post("/api/invest/trades", json={**BUY, "fee": 0, "note": "无费用行"})
+
+    row = c.get("/api/invest/trades").json()["trades"][0]
+    assert row["fee"] == 0  # 序列化侧回数字 0
+    assert c.post("/api/invest/trades/delete", json={"row": row}).status_code == 200
+    assert c.get("/api/invest/trades").json()["trades"] == []
+
+
 def test_mp_trades_rejects_unknown_instrument(tmp_path):
     c = _make_client(tmp_path)
     r = c.post("/api/invest/trades", json={**BUY, "instrument_id": "nope"})

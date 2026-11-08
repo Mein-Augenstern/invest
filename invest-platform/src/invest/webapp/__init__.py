@@ -111,6 +111,21 @@ def create_app(
     app.add_middleware(HostCheckMiddleware)
     app.add_middleware(TokenAuthMiddleware)
 
+    # S10 过渡部署（无自有域名）：前端在 invest-*.pages.dev，API 经 trycloudflare
+    # 隧道跨域访问——INVEST_ALLOWED_ORIGINS 精确放行该单一 origin。
+    # 缺省不配置 = 无 CORS 头 = 维持"无 CORS 即防御"（同源/自有域名形态）。
+    _cors_origins = [o.strip() for o in os.environ.get("INVEST_ALLOWED_ORIGINS", "").split(",") if o.strip()]
+    if _cors_origins:
+        from fastapi.middleware.cors import CORSMiddleware
+
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=_cors_origins,
+            allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+            allow_headers=["Authorization", "Content-Type"],
+            expose_headers=["X-Error-Type", "X-Trace-Id"],
+        )
+
     # S03 全局异常处理：兜底 500 → 友好 JSON + X-Error-Type 头
     from .error_handlers import register_error_handlers
     register_error_handlers(app)

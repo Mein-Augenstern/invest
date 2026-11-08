@@ -184,17 +184,21 @@ NUM_COLS = {"quantity", "price", "fee"}
 
 
 def _row_matches(r: dict, row: dict) -> bool:
-    """单行匹配：数值列容差比较，其余列字符串比较。"""
+    """单行匹配：数值列容差比较（空值按 0 归一），其余列字符串比较。
+
+    空值归一的依据：落盘侧无费用写空串（`,,`），序列化侧回 0（数字）——
+    不归一则"记一笔无费用 → 删除"必 409（2026-11-08 PC 端 E2E 实证）。
+    """
     for k in COLUMNS:
         expected = str(row.get(k, ""))
         actual = r.get(k) or ""
-        if k in NUM_COLS and expected and actual:
+        if k in NUM_COLS:
             try:
-                if float(actual) != float(expected):
+                if float(actual or 0) != float(expected or 0):
                     return False
                 continue
             except ValueError:
-                pass
+                pass  # 非数值（理论不应出现）退回字符串比较
         if actual != expected:
             return False
     return True

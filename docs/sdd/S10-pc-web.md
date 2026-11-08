@@ -1,6 +1,6 @@
 # S10 · PC Web 端（invest-web）（Spec）
 
-> 优先级 P1 · 状态：**进行中** · 前置：公网鉴权边界整改（2026-11-08 已完成，commit `138b029`）
+> 优先级 P1 · 状态：**生产验收通过（2026-11-08，过渡形态）** · 前置：公网鉴权边界整改（2026-11-08 已完成，commit `138b029`）
 > 原则：桌面端是移动端的**宽屏延伸**而非另起炉灶——领域逻辑仍全在 Python 端，
 > 前端只做展示与录入，指标口径与小程序逐字段一致。
 > 章程变更：PRD §5 负面清单原含「PC 端」，2026-11-08 经用户批准解禁（见 product.md 修订记录）。
@@ -96,6 +96,11 @@
 
 ### 部署拓扑
 
+> **过渡形态（2026-11-08 上线，无自有域名）**：前端 `invest-6eq.pages.dev`，
+> API 经 cloudflared **快速隧道**（`*.trycloudflare.com`，重启换址）跨域访问——
+> 后端 HostCheck 增后缀放行（`*.trycloudflare.com`），CORS 经 `INVEST_ALLOWED_ORIGINS`
+> 精确放行 pages.dev 单一 origin。购买域名后切回下方同 zone 代理形态并撤销 CORS。
+
 ```
 浏览器 ──HTTPS──▶ invest.<domain>（Cloudflare Pages：SPA 静态资源）
                      │ _redirects: /api/*  →  https://api.<domain>/api/:splat  200（同 zone 代理）
@@ -123,4 +128,33 @@
 
 ## 验收记录
 
-（实现后填写）
+**2026-11-08 生产验收通过（过渡形态：invest-6eq.pages.dev + trycloudflare 快速隧道）**
+
+- AC-1 ✅ 线上无 token 访问任意路由重定向 /login；错误 token 提示「token 无效」；
+  正确 token 登录进入总览（浏览器实测）
+- AC-2 ✅（过渡形态）pages.dev → trycloudflare 隧道 → ECS 8790 全链 HTTPS；
+  预检 200 且 `access-control-allow-origin` 精确为 `https://invest-6eq.pages.dev`；
+  同 zone 代理形态待域名后切换
+- AC-3 ✅ vitest 25/25（xirr 小数×100 / pct_5y 已是百分数 / 红涨绿跌 / UTC 边界 /
+  markdown 注入安全 / 401 清 token）
+- AC-4 ✅ 登录 + 13 屏线上逐一巡检通过（总览/标的详情/流水/统计/信号/回测/周报/
+  估值/日记/年度/标的管理/截图识别/设置）；每屏 StateBlock 三态
+- AC-5 ✅ data_stale 徽标 + 立即拉数（POST /pull 409 接管轮询）随总览实现
+- AC-6 ✅ OCR 页与标的管理截图识别在 Linux 服务端 422 时展示语义降级（el-result）
+- AC-7 ✅ CI 双 job：pytest 179 全绿（新增 7 项 S10 回归）+ 前端 vue-tsc/vitest/build
+- AC-8 ✅ 生产产物 grep 无 token（token 仅登录页输入存 localStorage）
+
+**验收中发现并修复的缺陷（均已带回归测试）**
+1. 流水删除 409（fee 空值）：CSV 无费用存空串、API 回 0，字符串比较永不相等——
+   `_row_matches` 数值列空值按 0 归一（小程序同样受益）
+2. 周报在 MySQL 部署读错库（reportjob 硬编码 LocalStore → default_store）
+3. GLM key 容器内路径解析到只读层且重启即丢（INVEST_GLM_KEY_FILE + 启动加载）
+4. HostCheck 后缀匹配 / CORS env 化（本 AC-2 过渡形态的基础设施）
+
+**已知限制（过渡形态）**
+- trycloudflare 快速隧道无 SLA，ECS 重启后地址变化需同步三处：
+  ① `invest-web/.env.production.local` 的 VITE_API_BASE 重建部署
+  ② `scripts/secrets/app.env` 的 INVEST_ALLOWED_ORIGINS（若前端地址不变则无需）
+  ③ 隧道域名自动落入 `*.trycloudflare.com` 后缀放行，无需改后端
+- 策略回测需 portfolio 配置 `benchmark_tr_code`（全收益指数），未配置如实提示
+- OCR 依赖 macOS Vision，ECS（Linux）上不可用，页面展示降级说明

@@ -44,7 +44,7 @@ SXX-*.md        代码变更      AC 全过才关闭
 | [S07](S07-navigation.md) | 导航与信息架构 | ✅ 已实现（验收记录待补） | P2 |
 | [S08](S08-onboarding.md) | 首次使用引导 | ✅ 已实现（前端组件，验收记录待补） | P2 |
 | [S09](S09-distributed-schedule.md) | 分布式定时拉数 | ✅ 生产验收（2026-11-06） | P0 |
-| [S10](S10-pc-web.md) | PC Web 端（invest-web） | 🔄 进行中 | P1 |
+| [S10](S10-pc-web.md) | PC Web 端（invest-web） | ✅ 生产验收（2026-11-08 过渡形态） | P1 |
 
 ## 稳定性优先原则
 

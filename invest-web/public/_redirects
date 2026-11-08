@@ -1,2 +1,5 @@
-/api/* https://api.__DOMAIN__/api/:splat 200
+# SPA history 路由回退。
+# 注：S10 过渡形态（无自有域名）下 API 不走同 zone 代理——前端经 VITE_API_BASE
+# 跨域直连 trycloudflare 隧道，后端 INVEST_ALLOWED_ORIGINS 单点放行。
+# 购买域名后恢复：/api/* https://api.<domain>/api/:splat 200（同 zone 代理，免 CORS）
 /* /index.html 200

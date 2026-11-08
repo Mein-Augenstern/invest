@@ -48,7 +48,7 @@ ssh ecs "docker network create invest_net 2>/dev/null || true; \
   -e INVEST_AUTH_MODE=token \
   -e INVEST_DATA_DIR=/data \
   -e INVEST_GLM_KEY_FILE=/data/glm.local.env \
-  -e INVEST_HOSTS_EXTRA=127.0.0.1,47.92.235.34 \
+  -e INVEST_HOSTS_EXTRA='127.0.0.1,47.92.235.34,*.trycloudflare.com' \
   -e TZ=Asia/Shanghai \
   -v /opt/invest/data:/data \
   -v /opt/invest/config:/app/config:ro \

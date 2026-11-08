@@ -46,12 +46,23 @@ def parse_star_member(jwt_lib, token: str, secret: str) -> int | None:
 
 
 class HostCheckMiddleware(BaseHTTPMiddleware):
+    """Host 白名单：精确匹配，或 `*.suffix` 条目做子域后缀匹配。
+
+    后缀匹配服务于隧道形态（S10 过渡部署）：cloudflared 快速隧道的域名
+    每次重启随机变化（*.trycloudflare.com），逐个登记不可行——
+    INVEST_HOSTS_EXTRA 配 `*.trycloudflare.com` 即放行任意该后缀 Host，
+    鉴权仍由 TokenAuth 把关（Host 放行 ≠ 匿名可访问）。
+    """
+
     async def dispatch(self, request: Request, call_next):
         allowed: set[str] = request.app.state.allowed_hosts
         host = (request.headers.get("host") or "").split(":")[0]
-        if host not in allowed:
-            return JSONResponse({"error": "host not allowed"}, status_code=403)
-        return await call_next(request)
+        if host in allowed:
+            return await call_next(request)
+        for entry in allowed:
+            if entry.startswith("*.") and host.endswith(entry[1:]):
+                return await call_next(request)
+        return JSONResponse({"error": "host not allowed"}, status_code=403)
 
 
 class TraceIdMiddleware(BaseHTTPMiddleware):

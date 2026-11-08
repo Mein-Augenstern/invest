@@ -8,6 +8,13 @@ import { clearToken, getToken } from './config'
 
 export const BASE_PATH = '/api/invest'
 
+/**
+ * API 基地址：缺省同源相对路径（开发期 vite 代理 / 生产期同域反代）。
+ * S10 过渡形态（无自有域名）：VITE_API_BASE 指向 trycloudflare 隧道 HTTPS 地址，
+ * 前端 pages.dev 与 API 跨域，靠后端 INVEST_ALLOWED_ORIGINS 单点放行。
+ */
+const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined)?.replace(/\/$/, '') || ''
+
 const DEFAULT_TIMEOUT_MS = 20_000
 
 export class ApiError extends Error {
@@ -36,7 +43,7 @@ export interface RequestOptions {
 }
 
 export function buildUrl(url: string, params?: RequestOptions['params']): string {
-  let full = `${BASE_PATH}${url}`
+  let full = `${API_BASE}${BASE_PATH}${url}`
   if (params) {
     const qs = Object.entries(params)
       .filter(([, v]) => v !== undefined && v !== '')
