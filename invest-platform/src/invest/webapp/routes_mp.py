@@ -563,8 +563,10 @@ def instruments_delete(payload: dict = Body(...), store=Depends(get_store), trad
 
 @router.get("/settings/glm-key")
 def glm_key_status(data_dir=Depends(get_data_dir)) -> dict:
-    """GLM Key 持久化（S2）：本机 gitignore 文件 config/glm.local.env；只回是否已配不回值。"""
-    f = data_dir.parent / "config" / "glm.local.env"
+    """GLM Key 持久化（S2）：本机 gitignore 文件（路径规则见 deps.glm_key_file）；只回是否已配不回值。"""
+    from .deps import glm_key_file
+
+    f = glm_key_file(data_dir)
     return {"configured": f.exists() and bool(f.read_text(encoding="utf-8").strip())}
 
 
@@ -572,8 +574,10 @@ def glm_key_status(data_dir=Depends(get_data_dir)) -> dict:
 def glm_key_save(payload: dict = Body(...), data_dir=Depends(get_data_dir)) -> dict:
     import os
 
+    from .deps import glm_key_file
+
     key = str(payload.get("key", "")).strip()
-    f = data_dir.parent / "config" / "glm.local.env"
+    f = glm_key_file(data_dir)
     if key:
         f.parent.mkdir(parents=True, exist_ok=True)
         f.write_text(f"INVEST_GLM_API_KEY={key}\n", encoding="utf-8")

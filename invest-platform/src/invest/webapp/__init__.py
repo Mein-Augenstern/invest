@@ -72,7 +72,11 @@ templates.env.filters["asset"] = _asset
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
-    """S09：环境变量门控的定时拉数循环（默认关；部署侧 docker-serve.sh 开）。"""
+    """启动钩子：S10 起 GLM key 从持久化文件载入 env（容器重启免手动注入）；
+    S09：环境变量门控的定时拉数循环（默认关；部署侧 docker-serve.sh 开）。"""
+    from .deps import load_glm_key_from_file
+
+    load_glm_key_from_file(app.state.data_dir)
     task = None
     if os.environ.get("INVEST_SCHEDULE", "").lower() in ("1", "true", "yes", "on"):
         from ..scheduler.pull_job import schedule_loop

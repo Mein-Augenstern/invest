@@ -1,6 +1,8 @@
 """周报生成后台任务：模式与 pulljob 一致（内存单句柄 + 状态轮询）。
 
 生成含 AI 解读时耗时可达 60s，同步等待必超时——接口只负责触发，前端轮询 status。
+store 走 default_store：本地 SQLite / 部署 MySQL 随环境（修掉旧实现硬编码
+LocalStore、MySQL 部署下周报读错库的问题，与 pulljob 同款修复）。
 """
 from __future__ import annotations
 
@@ -46,12 +48,13 @@ def _run(data_dir, config_path, with_ai: bool) -> None:
         from datetime import datetime
         from pathlib import Path
 
+        from ..data.mysql_store import default_store
         from ..portfolio import load_portfolio
-        from ..data.local import LocalStore
         from ..ledger.trades import load_trades
         from ..reporting import build_weekly_report_md
 
-        store = LocalStore(Path(data_dir) / "invest.db")
+        # default_store：本地 SQLite / 部署 MySQL（INVEST_DB_URL），与读路径同库
+        store = default_store(Path(data_dir))
         conf = load_portfolio(store, config_path)
         trades = load_trades(Path(data_dir) / "trades.csv")
         report = build_weekly_report_md(conf, store, trades, with_ai=with_ai)

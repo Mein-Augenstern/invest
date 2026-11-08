@@ -1,6 +1,6 @@
 name: CI
 
-# 质量门：pytest 全绿（169 项，2026-11-07 基线）。
+# 质量门：后端 pytest 全绿（175 项，2026-11-08 基线）+ 前端 vue-tsc/vitest/build（S10）。
 on:
   push:
     branches: [main]
@@ -30,3 +30,33 @@ jobs:
 
       - name: Run tests
         run: uv run pytest -q
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: invest-web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: invest-web/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck (vue-tsc)
+        run: pnpm typecheck
+
+      - name: Unit tests (vitest)
+        run: pnpm test
+
+      - name: Build
+        run: pnpm build

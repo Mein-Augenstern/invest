@@ -84,7 +84,7 @@ onShow(load)
       <text
         v-for="y in years"
         :key="y"
-        :class="{ on: y === year }"
+        :class="{ on: String(y) === year }"
         @tap="switchYear(y)"
       >{{ y }}</text>
     </view>
