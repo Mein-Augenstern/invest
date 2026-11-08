@@ -3,7 +3,7 @@
   从截图识别（OCR + AI 反显表单，依赖 macOS Vision，Linux 部署 422 属预期降级）· 删除双保护（持仓 409 / yaml 种子 404）。
 -->
 <script setup lang="ts">
-import { nextTick, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import {
   ElMessage,
   ElMessageBox,
@@ -22,13 +22,63 @@ import { fmtQty } from '@/utils/format'
 
 /** 品类：value 为后端 INSTRUMENT_TYPES，中文与小程序一致 */
 const TYPES = [
-  { value: 'open_end_fund', label: '场外基金' },
-  { value: 'etf', label: 'ETF' },
-  { value: 'stock', label: '股票' },
-  { value: 'bond', label: '债券' },
-  { value: 'wealth', label: '理财/固收' },
+  { value: 'open_end_fund', label: '场外基金', group: 'fund' },
+  { value: 'etf', label: 'ETF', group: 'fund' },
+  { value: 'stock', label: '股票', group: 'stock' },
+  { value: 'bond', label: '债券', group: 'bond' },
+  { value: 'wealth', label: '理财/固收', group: 'wealth' },
 ]
 const typeLabel = (t: string) => TYPES.find((x) => x.value === t)?.label || t || '—'
+const typeGroup = (t: string) => TYPES.find((x) => x.value === t)?.group || 'other'
+
+/** 资产大类 Tab（家庭四类 + 全部） */
+const GROUPS = [
+  { value: '', label: '全部', icon: '' },
+  { value: 'fund', label: '基金', icon: '🍬' },
+  { value: 'stock', label: '股票', icon: '📈' },
+  { value: 'bond', label: '债券', icon: '🏛' },
+  { value: 'wealth', label: '理财', icon: '💰' },
+]
+const activeGroup = ref('')
+
+/** 品类统计（按当前标的列表实时算） */
+const groupStats = computed(() => {
+  const stats = GROUPS.filter((g) => g.value).map((g) => {
+    const items = rows.value.filter((r) => typeGroup(r.type) === g.value)
+    return { ...g, count: items.length, held: items.filter((i) => i.held_qty > 0).length }
+  })
+  return stats
+})
+
+const filteredRows = computed(() => {
+  if (!activeGroup.value) return rows.value
+  return rows.value.filter((r) => typeGroup(r.type) === activeGroup.value)
+})
+
+type TagType = 'primary' | 'success' | 'warning' | 'info' | 'danger'
+
+/** 持仓状态 */
+function heldLabel(qty: number): { text: string; type: TagType } {
+  if (qty > 0) return { text: '持有中', type: 'success' }
+  return { text: '已清仓', type: 'info' }
+}
+
+/** 类型 → 标签颜色 */
+function typeTagColor(t: string): TagType {
+  const map: Record<string, TagType> = {
+    open_end_fund: 'primary',
+    etf: 'primary',
+    stock: 'danger',
+    bond: 'warning',
+    wealth: 'success',
+  }
+  return map[t] || 'info'
+}
+
+/** 账户 slug → 中文名 */
+function accountLabel(slug: string): string {
+  return ACCOUNTS.find((a) => a.value === slug)?.label || slug
+}
 
 /** 删除失败的语义映射（后端：409 = 仍有持仓流水；404 = 不在数据库，即 yaml 种子） */
 const MSG_HELD = '仍有持仓不可删除'
@@ -66,6 +116,31 @@ const form = reactive<FormModel>(emptyForm())
 /** 截图识别原文：核对用；AI 未识别时默认展开供手动对照 */
 const ocrText = ref('')
 const ocrOpen = ref<string[]>([])
+
+/** 常用账户（下拉选择 + 允许自定义输入） */
+const ACCOUNTS = [
+  { value: 'pension', label: '个人养老金' },
+  { value: 'a_stock', label: 'A股证券' },
+  { value: 'bank', label: '银行账户' },
+  { value: 'broker', label: '券商' },
+  { value: '', label: '暂不指定' },
+]
+
+/** 品类动态表单提示 */
+const CODE_HINTS: Record<string, string> = {
+  open_end_fund: '6 位基金代码，如 001102',
+  etf: '场内 ETF 代码，如 159928',
+  stock: '6 位股票代码，如 600519',
+  bond: '债券代码带市场前缀，如 sh019547',
+  wealth: '理财产品无需代码，留空即可',
+}
+const BENCH_HINTS: Record<string, string> = {
+  open_end_fund: '跟踪的指数名称，如 中证红利',
+  etf: '跟踪的指数名称，如 中证消费50',
+  stock: '可空，板块或行业指数',
+  bond: '可空',
+  wealth: '可空',
+}
 
 /** 与后端 POST /instruments 同口径 */
 const ID_RE = /^[a-z0-9_]{2,32}$/
@@ -225,7 +300,7 @@ onMounted(load)
 </script>
 
 <template>
-  <PageHeader title="标的管理" desc="新增/修改即时生效；新增后需到总览「立即拉数」抓取行情，理财/固收无需代码">
+  <PageHeader title="标的管理" desc="按资产大类管理家庭持仓标的；新增后需「立即拉数」抓取行情">
     <template #actions>
       <el-upload
         ref="uploadRef"
@@ -241,43 +316,77 @@ onMounted(load)
     </template>
   </PageHeader>
 
-  <div class="panel">
+  <!-- 品类统计条 -->
+  <div v-if="rows.length" class="grid grid-4 group-stats">
+    <div
+      v-for="g in groupStats"
+      :key="g.value"
+      class="panel group-card"
+      :class="{ active: activeGroup === g.value }"
+      @click="activeGroup = activeGroup === g.value ? '' : g.value"
+    >
+      <div class="gc-icon">{{ g.icon }}</div>
+      <div class="gc-body">
+        <div class="gc-name">{{ g.label }}</div>
+        <div class="gc-num num">{{ g.count }} 个标的</div>
+        <div class="gc-held muted">{{ g.held }} 个持有中</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel panel-gap">
     <StateBlock
       :loading="loading"
       :error="error"
-      :empty="!rows.length"
+      :empty="!filteredRows.length"
       :has-data="!!rows.length"
-      empty-text="暂无标的，点右上角「新增标的」开始"
+      :empty-text="activeGroup ? '该品类暂无标的' : '暂无标的，点右上角「新增标的」开始'"
       @retry="load"
     >
       <template #empty-action>
         <el-button type="primary" @click="openDialog()">新增标的</el-button>
       </template>
 
-      <el-table :data="rows" row-key="id">
-        <el-table-column prop="id" label="标识" min-width="140" show-overflow-tooltip>
-          <template #default="{ row }"><span class="mono">{{ row.id }}</span></template>
+      <!-- 品类 Tab -->
+      <el-tabs v-if="rows.length" v-model="activeGroup" class="type-tabs">
+        <el-tab-pane v-for="g in GROUPS" :key="g.value" :label="g.label" :name="g.value" />
+      </el-tabs>
+
+      <el-table :data="filteredRows" row-key="id">
+        <el-table-column prop="name" label="名称" min-width="200" show-overflow-tooltip>
+          <template #default="{ row }">
+            <span class="ins-name">{{ row.name }}</span>
+          </template>
         </el-table-column>
-        <el-table-column prop="name" label="名称" min-width="200" show-overflow-tooltip />
-        <el-table-column label="类型" width="100">
-          <template #default="{ row }">{{ typeLabel(row.type) }}</template>
+        <el-table-column label="类型" width="110" align="center">
+          <template #default="{ row }">
+            <el-tag :type="typeTagColor(row.type)" effect="light" size="small">{{ typeLabel(row.type) }}</el-tag>
+          </template>
         </el-table-column>
-        <el-table-column label="代码" width="110">
-          <template #default="{ row }">{{ row.code || '—' }}</template>
+        <el-table-column label="代码" width="120">
+          <template #default="{ row }"><span class="mono">{{ row.code || '—' }}</span></template>
         </el-table-column>
-        <el-table-column label="基准指数" min-width="120" show-overflow-tooltip>
+        <el-table-column label="基准指数" min-width="110" show-overflow-tooltip>
           <template #default="{ row }">{{ row.benchmark_index || '—' }}</template>
         </el-table-column>
-        <el-table-column label="账户" width="110" show-overflow-tooltip>
-          <template #default="{ row }">{{ row.account || '—' }}</template>
+        <el-table-column label="账户" width="100" align="center">
+          <template #default="{ row }">
+            <el-tag v-if="row.account" type="info" size="small" effect="plain">{{ accountLabel(row.account) }}</el-tag>
+            <span v-else class="muted">—</span>
+          </template>
         </el-table-column>
-        <el-table-column label="持仓数量" align="right" width="120">
+        <el-table-column label="持仓数量" align="right" width="110" sortable :sort-by="'held_qty'">
           <template #default="{ row }">{{ fmtQty(row.held_qty) }}</template>
         </el-table-column>
-        <el-table-column label="来源" width="110" align="center">
+        <el-table-column label="状态" width="90" align="center">
           <template #default="{ row }">
-            <el-tag v-if="row.from_db" type="primary" effect="plain" size="small">数据库</el-tag>
-            <el-tag v-else type="info" size="small">YAML 种子</el-tag>
+            <el-tag :type="heldLabel(row.held_qty).type" size="small">{{ heldLabel(row.held_qty).text }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="来源" width="100" align="center">
+          <template #default="{ row }">
+            <el-tag v-if="row.from_db" type="primary" effect="plain" size="small">自建</el-tag>
+            <el-tag v-else type="info" size="small">配置</el-tag>
           </template>
         </el-table-column>
         <el-table-column label="操作" width="120" align="center" fixed="right">
@@ -297,25 +406,28 @@ onMounted(load)
       </el-collapse-item>
     </el-collapse>
     <el-form ref="formRef" :model="form" :rules="rules" label-width="88px">
-      <el-form-item label="标识" prop="id">
-        <el-input v-model="form.id" :disabled="editing" placeholder="如 my_fund（2-32 位小写字母/数字/下划线）" />
+      <el-form-item label="类型" prop="type">
+        <el-radio-group v-model="form.type">
+          <el-radio-button v-for="t in TYPES" :key="t.value" :value="t.value">{{ t.label }}</el-radio-button>
+        </el-radio-group>
       </el-form-item>
       <el-form-item label="名称" prop="name">
-        <el-input v-model="form.name" placeholder="展示名称" />
+        <el-input v-model="form.name" placeholder="展示名称，如 中证红利基金Y" />
       </el-form-item>
-      <el-form-item label="类型" prop="type">
-        <el-select v-model="form.type" placeholder="选择类型" style="width: 100%">
-          <el-option v-for="t in TYPES" :key="t.value" :label="t.label" :value="t.value" />
-        </el-select>
+      <el-form-item label="标识" prop="id">
+        <el-input v-model="form.id" :disabled="editing" placeholder="唯一标识（2-32 位小写字母/数字/下划线）" />
       </el-form-item>
       <el-form-item label="代码">
-        <el-input v-model="form.code" placeholder="基金/股票代码；债券带 sh/sz 前缀；理财留空" />
+        <el-input v-model="form.code" :placeholder="CODE_HINTS[form.type] || '可空'" />
+        <div class="form-hint muted">{{ CODE_HINTS[form.type] }}</div>
       </el-form-item>
       <el-form-item label="基准指数">
-        <el-input v-model="form.benchmark_index" placeholder="可空，如 中证红利" />
+        <el-input v-model="form.benchmark_index" :placeholder="BENCH_HINTS[form.type] || '可空'" />
       </el-form-item>
       <el-form-item label="账户">
-        <el-input v-model="form.account" placeholder="如 pension / a_stock / bank" />
+        <el-select v-model="form.account" filterable allow-create placeholder="选择或输入账户" style="width: 100%">
+          <el-option v-for="a in ACCOUNTS" :key="a.value" :label="a.label" :value="a.value" />
+        </el-select>
       </el-form-item>
     </el-form>
     <template #footer>
@@ -329,6 +441,56 @@ onMounted(load)
 .mono {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 13px;
+}
+.form-hint {
+  font-size: 12px;
+  margin-top: 2px;
+}
+.group-stats {
+  margin-bottom: 0;
+  cursor: pointer;
+}
+.group-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 20px;
+  cursor: pointer;
+  border: 1px solid var(--iv-border);
+  transition: border-color 0.2s, background 0.2s;
+}
+.group-card:hover {
+  border-color: var(--iv-primary);
+}
+.group-card.active {
+  border-color: var(--iv-primary);
+  background: var(--el-color-primary-light-9);
+}
+.gc-icon {
+  font-size: 28px;
+  flex-shrink: 0;
+}
+.gc-name {
+  font-weight: 600;
+  font-size: 14px;
+}
+.gc-num {
+  font-size: 20px;
+  font-weight: 700;
+  margin-top: 2px;
+}
+.gc-held {
+  font-size: 12px;
+  margin-top: 2px;
+}
+.type-tabs {
+  margin-bottom: 16px;
+}
+.type-tabs :deep(.el-tabs__header) {
+  margin-bottom: 0;
+}
+.ins-name {
+  font-weight: 500;
 }
 .ocr-fold {
   margin-bottom: 16px;
