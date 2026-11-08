@@ -4,10 +4,10 @@
   各卡独立三态：任一接口失败只影响所在卡片，退出登录始终可用。
 -->
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Download, Refresh, SwitchButton } from '@element-plus/icons-vue'
+import { Download, Lock, Refresh, SwitchButton, User } from '@element-plus/icons-vue'
 import PageHeader from '@/components/PageHeader.vue'
 import StateBlock from '@/components/StateBlock.vue'
 import { ApiError, errMsg } from '@/api/client'
@@ -20,13 +20,73 @@ import {
   saveGlmKey,
   startPull,
 } from '@/api/invest'
+import { changePassword, getProfile, updateProfile, type MemberProfile } from '@/api/member'
 import type { BackupInfo, DataHealth, PullStatus } from '@/types'
 import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
 const auth = useAuthStore()
 
-/* ---------- 访问与安全 ---------- */
+/* ---------- 个人信息 ---------- */
+
+const profile = ref<MemberProfile | null>(null)
+const profileLoading = ref(true)
+const profileError = ref('')
+const nicknameEdit = ref('')
+const nicknameSaving = ref(false)
+
+async function loadProfile() {
+  profileLoading.value = true
+  profileError.value = ''
+  try {
+    profile.value = await getProfile()
+    nicknameEdit.value = profile.value?.nickname || ''
+  } catch (e) {
+    profileError.value = errMsg(e)
+  } finally {
+    profileLoading.value = false
+  }
+}
+
+async function saveNickname() {
+  const v = nicknameEdit.value.trim()
+  if (!v || nicknameSaving.value) return
+  nicknameSaving.value = true
+  try {
+    await updateProfile({ nickname: v })
+    ElMessage.success('昵称已更新')
+    if (profile.value) profile.value.nickname = v
+    if (auth.member) auth.member.nickname = v
+  } catch (e) {
+    ElMessage.error(errMsg(e))
+  } finally {
+    nicknameSaving.value = false
+  }
+}
+
+/* ---------- 修改密码 ---------- */
+
+const pwdForm = reactive({ old: '', fresh: '', confirm: '' })
+const pwdSaving = ref(false)
+
+async function submitPassword() {
+  if (pwdSaving.value) return
+  if (!pwdForm.old || !pwdForm.fresh) return ElMessage.warning('请填写旧密码与新密码')
+  if (pwdForm.fresh !== pwdForm.confirm) return ElMessage.warning('两次新密码不一致')
+  if (pwdForm.fresh.length < 6) return ElMessage.warning('新密码至少 6 位')
+  pwdSaving.value = true
+  try {
+    await changePassword(pwdForm.old, pwdForm.fresh)
+    ElMessage.success('密码已修改，下次登录使用新密码')
+    pwdForm.old = pwdForm.fresh = pwdForm.confirm = ''
+  } catch (e) {
+    ElMessage.error(errMsg(e))
+  } finally {
+    pwdSaving.value = false
+  }
+}
+
+/* ---------- 退出登录 ---------- */
 
 function logout() {
   auth.logout()
@@ -217,6 +277,7 @@ onMounted(() => {
   loadGlm()
   loadPull()
   loadBackup()
+  loadProfile()
 })
 onBeforeUnmount(stopPullPolling)
 </script>
@@ -225,22 +286,57 @@ onBeforeUnmount(stopPullPolling)
   <PageHeader title="设置" desc="访问凭证 · AI 能力 · 数据拉取 · 备份与数据健康" />
 
   <div class="grid grid-2">
-    <!-- 卡1 访问与安全 -->
+    <!-- 卡1 个人信息 -->
     <section class="panel">
       <div class="panel-title">
-        访问与安全
+        个人信息
         <el-tag :type="auth.authed ? 'success' : 'info'" size="small">{{ auth.authed ? '已登录' : '未登录' }}</el-tag>
       </div>
-      <ul class="tips">
-        <li>会员账号经 star 平台登录，登录凭据（JWT）仅保存在本机浏览器（localStorage），不写入构建产物。</li>
-        <li>当前会员：{{ auth.member?.nickname || auth.member?.username || '—' }}（member #{{ auth.member?.id ?? '—' }}）。</li>
-        <li>修改密码请前往小程序「我的」页；在公共电脑上使用后请务必退出登录。</li>
-      </ul>
+      <StateBlock :loading="profileLoading" :error="profileError" :has-data="!!profile" @retry="loadProfile">
+        <template v-if="profile">
+          <div class="profile-row">
+            <el-avatar :size="48" :icon="User" class="profile-avatar" />
+            <div class="profile-info">
+              <div class="profile-name">{{ profile.nickname || profile.username || '—' }}</div>
+              <div class="muted">member #{{ profile.id }}<span v-if="profile.createdAt"> · {{ profile.createdAt.slice(0, 10) }} 加入</span></div>
+            </div>
+          </div>
+          <el-form label-width="60px" class="profile-form">
+            <el-form-item label="昵称">
+              <div class="nick-row">
+                <el-input v-model="nicknameEdit" placeholder="展示昵称" maxlength="20" />
+                <el-button type="primary" size="small" :loading="nicknameSaving" :disabled="!nicknameEdit.trim() || nicknameEdit.trim() === profile.nickname" @click="saveNickname">保存</el-button>
+              </div>
+            </el-form-item>
+          </el-form>
+        </template>
+      </StateBlock>
       <el-popconfirm title="退出后需重新登录才能访问，确定退出？" confirm-button-text="退出" :width="260" @confirm="logout">
         <template #reference>
           <el-button type="danger" plain :icon="SwitchButton">退出登录</el-button>
         </template>
       </el-popconfirm>
+    </section>
+
+    <!-- 卡1.5 修改密码 -->
+    <section class="panel">
+      <div class="panel-title">
+        修改密码
+        <el-icon class="muted"><Lock /></el-icon>
+      </div>
+      <el-form label-width="72px">
+        <el-form-item label="旧密码">
+          <el-input v-model="pwdForm.old" type="password" show-password autocomplete="current-password" />
+        </el-form-item>
+        <el-form-item label="新密码">
+          <el-input v-model="pwdForm.fresh" type="password" show-password autocomplete="new-password" placeholder="至少 6 位" />
+        </el-form-item>
+        <el-form-item label="确认新密码">
+          <el-input v-model="pwdForm.confirm" type="password" show-password autocomplete="new-password" @keyup.enter="submitPassword" />
+        </el-form-item>
+      </el-form>
+      <el-button type="primary" :loading="pwdSaving" @click="submitPassword" style="width: 100%">修改密码</el-button>
+      <p class="muted pwd-hint">修改后当前登录不受影响，下次登录使用新密码</p>
     </section>
 
     <!-- 卡2 GLM 智能 -->
@@ -377,6 +473,36 @@ onBeforeUnmount(stopPullPolling)
 /* 全局 .panel + .panel 会给栅格内相邻卡片加上外边距，栅格内以 gap 为准 */
 .grid > .panel {
   margin-top: 0;
+}
+.profile-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+.profile-avatar {
+  background: var(--iv-primary);
+  flex-shrink: 0;
+}
+.profile-name {
+  font-size: 18px;
+  font-weight: 600;
+}
+.profile-info {
+  min-width: 0;
+}
+.profile-form {
+  margin-bottom: 16px;
+}
+.nick-row {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
+.pwd-hint {
+  text-align: center;
+  font-size: 12px;
+  margin-top: 8px;
 }
 .desc {
   margin: 0 0 14px;

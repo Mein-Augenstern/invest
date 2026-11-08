@@ -18,7 +18,7 @@ interface LoginVO {
   member: StarMember
 }
 
-interface StarEnvelope<T> {
+export interface StarEnvelope<T> {
   code: number
   message?: string
   data?: T

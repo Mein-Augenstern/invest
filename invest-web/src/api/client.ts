@@ -35,7 +35,7 @@ export function onUnauthorized(hook: UnauthorizedHook): void {
   unauthorizedHook = hook
 }
 
-type Method = 'GET' | 'POST' | 'DELETE'
+type Method = 'GET' | 'POST' | 'PUT' | 'DELETE'
 
 export interface RequestOptions {
   url: string
