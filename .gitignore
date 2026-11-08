@@ -1,2 +1,8 @@
 .mimosa/
 .DS_Store
+
+# ECS 部署密钥（2026-11-08 安全整改：token/MySQL 密码曾随配置入库，已轮换）
+scripts/secrets/
+.env.ecs
+# GLM 密钥（曾误入库，已移出索引并须轮换）
+glm.local.env

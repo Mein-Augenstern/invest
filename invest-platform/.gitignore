@@ -18,6 +18,8 @@ logs/
 # 本机 dev 密钥/连接串（公网化改造 2026-10-21，绝不入库）
 .env.dev
 data/backups/
+# GLM key（2026-11-08 发现曾入库，已移出索引并须轮换）
+config/glm.local.env
 
 # frpc 渲染配置（含真实 token，frpc-up.sh 生成；logs 已忽略双保险）
 logs/frpc.rendered.toml
