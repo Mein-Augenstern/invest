@@ -102,6 +102,75 @@ def ocr_image(path: Path) -> str:
     return "\n".join(lines)
 
 
+def parse_image_trades_by_glm(image_bytes: bytes, instruments: list[dict]) -> list[dict] | None:
+    """GLM-4V 直接识图 → 流水草稿（Linux 服务器可用，替代本地 Vision 的降级通道）。
+
+    与 parse_trades_by_llm 同输出 schema；无 Key 或任何失败返回 None。
+    SSRF 约束：仅请求配置的 https API 端点（INVEST_GLM_BASE_URL），不涉及用户输入 URL。
+    """
+    api_key = os.environ.get("INVEST_GLM_API_KEY")
+    if not api_key:
+        return None
+    import base64
+
+    import requests
+
+    base = os.environ.get("INVEST_GLM_BASE_URL", "https://open.bigmodel.cn/api/paas/v4/chat/completions")
+    model = os.environ.get("INVEST_GLM_VISION_MODEL", "glm-4v-flash")
+    ins_desc = "\n".join(f"- {i['id']}: {i['name']} ({i['type']})" for i in instruments)
+    try:
+        resp = requests.post(
+            base,
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            json={
+                "model": model,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "image_url",
+                                "image_url": {"url": "data:image/png;base64," + base64.b64encode(image_bytes).decode()},
+                            },
+                            {
+                                "type": "text",
+                                "text": (
+                                    SYSTEM_PROMPT
+                                    + "\n现在直接看图（不是 OCR 文本）。标的清单：\n" + ins_desc
+                                    + "\n输出交易流水 JSON 数组。"
+                                ),
+                            },
+                        ],
+                    }
+                ],
+                "temperature": 0.1,
+            },
+            timeout=45,
+        )
+        resp.raise_for_status()
+        content = resp.json()["choices"][0]["message"]["content"]
+    except Exception:  # noqa: BLE001 - 视觉通道失败降级为 None
+        return None
+    m = re.search(r"\[.*\]", content or "", re.S)
+    if not m:
+        return None
+    try:
+        rows = json.loads(m.group(0))
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(rows, list) or not rows:
+        return None
+    for r in rows:
+        if not isinstance(r, dict):
+            return None
+        for k in ("quantity", "price", "fee"):
+            try:
+                r[k] = float(r.get(k) or 0)
+            except (TypeError, ValueError):
+                return None
+    return rows
+
+
 def parse_trades_by_llm(ocr_text: str, instruments: list[dict]) -> list[dict] | None:
     """GLM 把 OCR 文本结构化为流水草稿；无 Key 或失败返回 None（降级手动）。"""
     if not ocr_text.strip():

@@ -506,20 +506,27 @@ async def mp_ocr(
     store=Depends(get_store),
     member_id=Depends(get_member_id),
 ):
-    """图片识别录入（S1）：上传截图 → 本地 Vision OCR → GLM 结构化流水草稿。
-
-    图片只在系统临时目录即用即删；无 GLM Key 时返回 OCR 原文（预览页手动整理）。
-    """
-    from ..ocr import parse_trades_by_llm
+    """图片识别录入：本地 Vision OCR → GLM 结构化；Linux（无 Vision）降级
+    GLM-4V 直接识图；两者都不可用才 422（S1 → 智能录入 v2）。"""
+    from ..ocr import parse_image_trades_by_glm, parse_trades_by_llm
 
     try:
         data = await _read_upload_image(request)
-        text = _ocr_upload(data, ".png")
     except _UploadError as e:
         return JSONResponse({"error": str(e)}, status_code=422)
 
     state = build_entry_state(conf, store, _trades_of(store, member_id))
     instruments = [{"id": i["id"], "name": i["name"], "type": i["type"]} for i in state["instruments"]]
+
+    try:
+        text = _ocr_upload(data, ".png")
+    except _UploadError:
+        # 本地 Vision 不可用（Linux）→ GLM-4V 识图通道
+        trades = parse_image_trades_by_glm(data, instruments)
+        if trades is None:
+            return JSONResponse({"error": "识图不可用：服务器无本地 OCR 且未配置 GLM Key"}, status_code=422)
+        return {"text": "(GLM-4V 识图)", "trades": trades, "ai_parsed": True}
+
     trades = parse_trades_by_llm(text, instruments)
     return {"text": text, "trades": trades, "ai_parsed": trades is not None}
 

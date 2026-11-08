@@ -6,12 +6,12 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
-import { MagicStick, Plus } from '@element-plus/icons-vue'
+import { MagicStick, Microphone, Picture, Plus } from '@element-plus/icons-vue'
 import PageHeader from '@/components/PageHeader.vue'
 import StateBlock from '@/components/StateBlock.vue'
 import { errMsg } from '@/api/client'
-import { addTrade, deleteTrade, getTrades, parseTradeText } from '@/api/invest'
-import { ACTION_LABELS, type InstrumentBrief, type TradeRow } from '@/types'
+import { addTrade, deleteTrade, getTrades, ocrTrades, parseTradeText } from '@/api/invest'
+import { ACTION_LABELS, type InstrumentBrief, type OcrDraft, type TradeRow } from '@/types'
 import { fmtAmount, fmtQty, localDate } from '@/utils/format'
 
 const route = useRoute()
@@ -179,6 +179,87 @@ function repeatRow(row: TradeRow) {
   dialog.value = true
 }
 
+/* ---------- 图片录入：截图 → /ocr（GLM-4V 通道）→ 预填 ---------- */
+
+const imgInput = ref<HTMLInputElement | null>(null)
+const imgBusy = ref(false)
+
+function pickImage() {
+  imgInput.value?.click()
+}
+
+async function onImage(e: Event) {
+  const file = (e.target as HTMLInputElement).files?.[0]
+  ;(e.target as HTMLInputElement).value = ''
+  if (!file || imgBusy.value) return
+  imgBusy.value = true
+  try {
+    const r = await ocrTrades(file)
+    const drafts = r.trades || []
+    if (!drafts.length) {
+      ElMessage.warning(r.text ? '图中没有识别出流水，试试直接截图成交记录' : '没识别出流水')
+      return
+    }
+    applyDraft(drafts[0])
+    if (drafts.length > 1) ElMessage.info(`识别出 ${drafts.length} 笔，已预填第 1 笔`)
+    else ElMessage.success('已识别并预填，确认后保存')
+  } catch (err) {
+    ElMessage.error(errMsg(err))
+  } finally {
+    imgBusy.value = false
+  }
+}
+
+function applyDraft(d: OcrDraft) {
+  form.instrument_id = (d.instrument_id as string) || form.instrument_id
+  form.action = (d.action as typeof form.action) || 'buy'
+  form.date = (d.date as string) || localDate()
+  form.price = d.price !== undefined && d.price !== '' ? Number(d.price) : undefined
+  form.quantity = d.quantity !== undefined && d.quantity !== '' ? Number(d.quantity) : undefined
+  form.amount = undefined
+  form.fee = d.fee ? Number(d.fee) : undefined
+  form.note = (d.note as string) || ''
+  form.byAmount = false
+  dialog.value = true
+}
+
+/* ---------- 语音录入：浏览器语音识别（不可用时用系统键盘听写喂同一输入框） ---------- */
+
+const speechOn = ref(false)
+let recognition: unknown = null
+
+function toggleSpeech() {
+  const SR = (window as unknown as Record<string, unknown>)['SpeechRecognition'] || (window as unknown as Record<string, unknown>)['webkitSpeechRecognition']
+  if (!SR) {
+    ElMessage.info('当前浏览器不支持网页语音，可用系统听写（手机键盘麦克风 / Mac 按两次 Fn）对着输入框说话')
+    return
+  }
+  if (speechOn.value) {
+    (recognition as { stop: () => void }).stop()
+    return
+  }
+  const rec = new (SR as new () => never)() as unknown as {
+    lang: string
+    interimResults: boolean
+    onresult: (e: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void
+    onend: () => void
+    start: () => void
+    stop: () => void
+  }
+  rec.lang = 'zh-CN'
+  rec.interimResults = false
+  rec.onresult = (e) => {
+    const t = Array.from(e.results as ArrayLike<ArrayLike<{ transcript: string }>>).map((r) => r[0].transcript).join('')
+    smartText.value = t
+    smartParse()
+  }
+  rec.onend = () => (speechOn.value = false)
+  recognition = rec
+  speechOn.value = true
+  rec.start()
+  ElMessage.info('正在听…说完自动解析')
+}
+
 async function submit() {
   if (!formRef.value) return
   const valid = await formRef.value.validate().catch(() => false)
@@ -232,6 +313,15 @@ onMounted(load)
         <template #prefix><el-icon><MagicStick /></el-icon></template>
       </el-input>
       <el-button type="primary" :loading="smartBusy" @click="smartParse">解析记账</el-button>
+      <el-tooltip content="截图识别（GLM-4V）：选券商/基金App截图，识别后预填" placement="top">
+        <el-button :icon="Picture" :loading="imgBusy" @click="pickImage">图片</el-button>
+      </el-tooltip>
+      <input ref="imgInput" type="file" accept=".png,.jpg,.jpeg" hidden @change="onImage" />
+      <el-tooltip content="语音记账：说「今天买入消费50 1000元」自动解析（手机可用键盘听写）" placement="top">
+        <el-button :type="speechOn ? 'danger' : 'default'" :icon="Microphone" @click="toggleSpeech">
+          {{ speechOn ? '停止' : '语音' }}
+        </el-button>
+      </el-tooltip>
       <span class="muted smart-hint">解析后弹窗预填，确认才落账</span>
     </div>
     <div class="filters">
