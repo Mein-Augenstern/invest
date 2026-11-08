@@ -58,8 +58,9 @@ function onCommand(cmd: string) {
         <div class="topbar-title">{{ pageTitle }}</div>
         <el-dropdown trigger="click" @command="onCommand">
           <span class="user">
-            <el-avatar :size="28" class="user-avatar">M</el-avatar>
-            <span>muyi</span>
+            <el-avatar :size="28" class="user-avatar">{{ (auth.member?.nickname || auth.member?.username || '?')[0] }}</el-avatar>
+            <span>{{ auth.member?.nickname || auth.member?.username || '未登录' }}</span>
+            <span class="muted user-id">#{{ auth.member?.id ?? '—' }}</span>
             <el-icon><ArrowDown /></el-icon>
           </span>
           <template #dropdown>
@@ -150,6 +151,10 @@ function onCommand(cmd: string) {
 }
 .user-avatar {
   background: var(--iv-primary);
+}
+.user-id {
+  font-size: 11px;
+  margin-left: -4px;
 }
 .main {
   padding: 20px 24px 32px;

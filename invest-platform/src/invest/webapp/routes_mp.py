@@ -134,6 +134,7 @@ def overview(request: Request, conf=Depends(get_conf), store=Depends(get_store),
              trades=Depends(get_trades), member_id=Depends(get_member_id)) -> dict:
     """总览：组合汇总 + 按品类分组持仓 + 基准估值 + 近期信号（会员隔离）。"""
     view = build_portfolio_view(conf, store, trades)
+    # S11 诊断：回传 member_id 供前端校验（排查"登录 A 见 B 数据"用）
     # S09-AC4：数据过期时后台自动补拉（不阻塞渲染；门控/限频见函数 docstring）
     _maybe_autopull_on_stale(conf, store, request)
     name_of = {i.id: i.name for i in conf.instruments}
@@ -181,6 +182,7 @@ def overview(request: Request, conf=Depends(get_conf), store=Depends(get_store),
         "config_source": view.config_source,
         "is_example": view.is_example_config,
         "data_stale": _any_series_stale(conf, store),  # S09-AC4：前端"数据延迟"角标
+        "member_id": member_id,  # S11 诊断：当前请求归属的会员
         "totals": {
             "market_value": _r2(view.total_market_value),
             "unrealized": _r2(view.total_unrealized),
