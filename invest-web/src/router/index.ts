@@ -64,7 +64,11 @@ router.beforeEach((to) => {
   if (!to.meta.public && !hasToken()) {
     return { name: 'login', query: { redirect: to.fullPath } }
   }
-  if (to.name === 'login' && hasToken()) return { path: '/' }
+  // 注意：有 token 时也放行到 /login——LoginView onMounted 会清除旧凭据，
+  // 让用户以干净状态登录（切账号场景）。如果在这里重定向回 /，旧 token
+  // 永远不会被清除，导致「登录 A 却看到 B 数据」的残留会话 bug
+  // （2026-11-09 实证：路由守卫先于组件挂载执行，LoginView 的 clearToken
+  //   因提前重定向而永远不会运行）
   return true
 })
 
