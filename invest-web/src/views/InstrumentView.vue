@@ -219,6 +219,17 @@ const navOption = computed<EChartsOption>(() => {
           data: eventMarks.value,
         },
       },
+      // 基准对比线（归一化到同一起点，蛋卷式叠加）
+      ...(data.value?.benchmark_series && data.value.benchmark_series.length >= 2
+        ? [{
+            name: `${data.value?.benchmark?.name || '基准'}（归一化）`,
+            type: 'line' as const,
+            data: data.value.benchmark_series,
+            showSymbol: false,
+            lineStyle: { width: 1, type: 'dashed' as const, color: MUTED },
+            itemStyle: { color: MUTED },
+          }]
+        : []),
     ],
   }
 })
@@ -428,8 +439,10 @@ onMounted(load)
               <span class="pf-value num" :class="pnlClass(val)">{{ fmtPct(val) }}</span>
             </div>
           </div>
-          <div v-if="data.performance.volatility !== null || data.performance.max_drawdown !== null" class="risk-row">
-            <span v-if="data.performance.volatility !== null" class="muted">年化波动率 <b class="num">{{ (data.performance.volatility * 100).toFixed(1) }}%</b></span>
+          <div class="risk-row">
+            <span v-if="data.performance.risk_level" class="muted">风险等级 <el-tag size="small" :type="data.performance.risk_level.startsWith('R1') || data.performance.risk_level.startsWith('R2') ? 'success' : data.performance.risk_level.startsWith('R3') ? 'warning' : 'danger'">{{ data.performance.risk_level }}</el-tag></span>
+            <span v-if="data.performance.sharpe !== null" class="muted">夏普比率 <b class="num">{{ data.performance.sharpe }}</b></span>
+            <span v-if="data.performance.volatility !== null" class="muted">年化波动 <b class="num">{{ (data.performance.volatility * 100).toFixed(1) }}%</b></span>
             <span v-if="data.performance.max_drawdown !== null" class="muted">最大回撤 <b class="num" :class="pnlClass(data.performance.max_drawdown)">{{ (data.performance.max_drawdown * 100).toFixed(1) }}%</b></span>
           </div>
         </div>
@@ -529,6 +542,34 @@ onMounted(load)
             <el-empty v-else :image-size="60" description="暂无行业披露" />
           </div>
         </div>
+      </div>
+
+      <!-- 分红历史 -->
+      <div v-if="data.dividends && data.dividends.length" class="panel panel-gap">
+        <div class="panel-title">
+          分红历史
+          <span class="muted hint">共 {{ data.dividends.length }} 次，累计 {{ fmtAmount(data.dividends.reduce((s, d) => s + d.amount, 0)) }} 元</span>
+        </div>
+        <el-table :data="data.dividends" size="small">
+          <el-table-column prop="date" label="日期" width="110" />
+          <el-table-column label="类型" width="100">
+            <template #default="{ row }">
+              <el-tag :type="row.type === '现金分红' ? 'success' : 'primary'" size="small" effect="plain">{{ row.type }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="份额" align="right" width="100">
+            <template #default="{ row }">{{ fmtQty(row.quantity) }}</template>
+          </el-table-column>
+          <el-table-column label="每份分红" align="right" width="100">
+            <template #default="{ row }">{{ fmtAmount(row.price, 4) }}</template>
+          </el-table-column>
+          <el-table-column label="金额" align="right" width="110">
+            <template #default="{ row }">
+              <span class="num" :class="pnlClass(row.amount)">{{ fmtSigned(row.amount) }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="note" label="备注" min-width="120" show-overflow-tooltip />
+        </el-table>
       </div>
 
       <!-- 交易事件 + 该标的信号 -->

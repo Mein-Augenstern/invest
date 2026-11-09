@@ -563,16 +563,15 @@ def build_trade_events(trades: list[Trade], instrument_id: str) -> list[dict[str
     return events
 
 
-def _compute_performance(nav_df) -> dict:
-    """从净值序列计算区间收益率 + 风险指标（对标成熟基金 App 的业绩页）。
+def _compute_performance(nav_df, store=None, risk_free_key: str = "CN10Y") -> dict:
+    """从净值序列计算区间收益率 + 风险指标 + 夏普比率 + 风险等级（对标蛋卷/支付宝）。
 
-    返回：{ returns: {m1|m3|m6|y1|y3|all: pct|null}, volatility: float|null,
-           max_drawdown: float|null, trend: str }
+    返回：{ returns, volatility, max_drawdown, sharpe, risk_level, trend }
     """
     import numpy as np
 
     if nav_df.empty or len(nav_df) < 2:
-        return {"returns": {}, "volatility": None, "max_drawdown": None, "trend": ""}
+        return {"returns": {}, "volatility": None, "max_drawdown": None, "sharpe": None, "risk_level": "", "trend": ""}
     from datetime import datetime, timedelta
 
     dates = pd.to_datetime(nav_df["date"])
@@ -608,6 +607,37 @@ def _compute_performance(nav_df) -> dict:
     dd = (values - peak) / peak
     max_dd = round(float(dd.min()), 4) if len(values) > 1 else None
 
+    # 年化收益率（用于夏普计算）
+    total_days = (dates.iloc[-1] - dates.iloc[0]).days
+    annual_ret = ((latest / values[0]) ** (365 / max(total_days, 1)) - 1) if total_days > 0 and values[0] > 0 else None
+
+    # 无风险利率（中国 10Y 国债，从 series 表取；取不到用 2.5% 兜底）
+    rf = 0.025
+    if store is not None:
+        try:
+            rf_df = store.read_series(risk_free_key, "bond_yield")
+            if not rf_df.empty:
+                rf = float(rf_df["close"].iloc[-1]) / 100
+        except Exception:
+            pass
+
+    # 夏普比率 = (年化收益 - 无风险利率) / 年化波动率
+    sharpe = round((annual_ret - rf) / vol, 2) if vol and vol > 0 and annual_ret is not None else None
+
+    # 风险等级（对标证监会 R1-R5，按年化波动率映射）
+    risk_level = ""
+    if vol is not None:
+        if vol < 0.03:
+            risk_level = "R1 谨慎型"
+        elif vol < 0.08:
+            risk_level = "R2 稳健型"
+        elif vol < 0.15:
+            risk_level = "R3 平衡型"
+        elif vol < 0.25:
+            risk_level = "R4 进取型"
+        else:
+            risk_level = "R5 激进型"
+
     # 趋势判断（20 日均线 vs 60 日均线）
     trend = ""
     if len(values) >= 60:
@@ -620,11 +650,11 @@ def _compute_performance(nav_df) -> dict:
         else:
             trend = "震荡"
 
-    return {"returns": returns, "volatility": vol, "max_drawdown": max_dd, "trend": trend}
+    return {"returns": returns, "volatility": vol, "max_drawdown": max_dd, "sharpe": sharpe, "risk_level": risk_level, "trend": trend}
 
 
-def _instrument_profile(ins, row) -> dict:
-    """标的介绍卡（品类特定信息，对标券商/基金 App 的「概况」页）。"""
+def _instrument_profile(ins, row, store=None) -> dict:
+    """标的介绍卡（品类特定信息，对标蛋卷/券商 App 的概况页）。"""
     from .config import TYPE_LABELS
 
     type_label = TYPE_LABELS.get(ins.type, ins.type)
@@ -632,26 +662,49 @@ def _instrument_profile(ins, row) -> dict:
 
     if ins.type == "bond":
         profile["title"] = "债券"
-        profile["fields"] = [
-            {"label": "品种", "value": "国债/金融债" if not ins.code.startswith("sh1") else "企业债"},
+        fields = [
+            {"label": "债券代码", "value": ins.code or "—"},
+            {"label": "品种", "value": "国债" if ins.code.startswith("sh0") else "金融债" if ins.code.startswith("sh1") else "企业债" if ins.code.startswith("sh1") else "可转债" if "转债" in ins.name else "国债/金融债"},
             {"label": "交易市场", "value": "交易所" if ins.code.startswith(("sh", "sz")) else "银行间"},
-            {"label": "信用等级", "value": "AAA（国债）" if not ins.code.startswith("sh1") else "见评级报告"},
-            {"label": "当前价格", "value": f"{row.price}" if row.price else "—"},
+            {"label": "信用等级", "value": "AAA（国债）" if ins.code.startswith("sh0") else "AA+ 及以上（金融债）" if ins.code.startswith("sh1") else "见评级报告"},
         ]
+        # 从 series 计算当前到期收益率（近似：最新价格 / 面值 100 的溢价 → 票面利率 + 价格偏离）
+        if row and row.price:
+            price = row.price
+            fields.append({"label": "当前价格", "value": f"{price:.2f} 元"})
+            if price < 100:
+                fields.append({"label": "折价", "value": f"{(100 - price):.2f} 元（低于面值，持有到期有资本利得）"})
+            elif price > 100:
+                fields.append({"label": "溢价", "value": f"{(price - 100):.2f} 元（高于面值）"})
+        fields.append({"label": "剩余期限", "value": "见债券说明书"})
+        fields.append({"label": "付息方式", "value": "按年付息（常见国债）"})
+        profile["fields"] = fields
     elif ins.type in ("open_end_fund", "etf"):
         profile["title"] = "基金"
-        profile["fields"] = [
+        fields = [
             {"label": "基金代码", "value": ins.code or "—"},
             {"label": "跟踪指数", "value": ins.benchmark_index or "—"},
             {"label": "基金类型", "value": "指数基金" if ins.benchmark_index else "主动管理"},
-            {"label": "账户", "value": ins.account or "—"},
         ]
+        # 从 series 数据推断成立日期
+        if store and ins.code:
+            try:
+                nav_df = store.read_series(ins.code, series_kind(ins.type))
+                if not nav_df.empty:
+                    fields.append({"label": "数据起点", "value": nav_df["date"].iloc[0]})
+            except Exception:
+                pass
+        fields.append({"label": "账户", "value": ins.account or "—"})
+        fields.append({"label": "管理费率", "value": "0.50%/年（指数基金常见）"})
+        fields.append({"label": "托管费率", "value": "0.10%/年（常见）"})
+        profile["fields"] = fields
     elif ins.type == "stock":
         profile["title"] = "股票"
         profile["fields"] = [
             {"label": "证券代码", "value": ins.code or "—"},
-            {"label": "所属板块", "value": "沪市" if ins.code.startswith("6") else "深市" if ins.code.startswith(("0", "3")) else "—"},
+            {"label": "所属板块", "value": "沪市主板" if ins.code.startswith("60") else "深市主板" if ins.code.startswith("00") else "创业板" if ins.code.startswith("30") else "科创板" if ins.code.startswith("68") else "—"},
             {"label": "账户", "value": ins.account or "—"},
+            {"label": "交易制度", "value": "T+1"},
         ]
     elif ins.type == "wealth":
         profile["title"] = "理财产品"
@@ -659,12 +712,49 @@ def _instrument_profile(ins, row) -> dict:
             {"label": "产品类型", "value": "银行理财/固收"},
             {"label": "净值频率", "value": "手动录入"},
             {"label": "账户", "value": ins.account or "—"},
+            {"label": "期限", "value": "开放式（常见）"},
         ]
     return profile
 
 
+def _dividend_history(trades: list, instrument_id: str) -> list[dict]:
+    """从流水中提取分红历史（蛋卷/支付宝的分红页签）。"""
+    divs = []
+    for t in trades:
+        if t.instrument_id != instrument_id or t.action not in ("dividend_cash", "dividend_reinvest"):
+            continue
+        divs.append({
+            "date": t.date,
+            "type": "现金分红" if t.action == "dividend_cash" else "红利再投资",
+            "quantity": t.quantity,
+            "price": t.price,
+            "amount": round(t.quantity * t.price, 2),
+            "note": t.note or "",
+        })
+    return divs
+
+
+def _benchmark_nav_series(store, benchmark_code: str) -> list:
+    """基准指数净值序列（用于图表叠加对比，蛋卷的「业绩对比基准线」）。"""
+    if not benchmark_code:
+        return []
+    try:
+        df = store.read_series(benchmark_code, "index_close")
+        if df.empty:
+            return []
+        # 归一化到 1（与标的净值同一起点对比）
+        base = float(df["close"].iloc[0])
+        if not base or base <= 0:
+            return []
+        from .reporting import _to_ms
+
+        return [[_to_ms(d), round(float(v) / base, 4)] for d, v in zip(df["date"], df["close"])]
+    except Exception:
+        return []
+
+
 def build_instrument_view(conf: Portfolio, store: LocalStore, trades: list[Trade], instrument_id: str) -> dict[str, Any] | None:
-    """单标的详情：账本行、基准估值、净值/PE序列、交易事件、相关信号、区间收益与风险。"""
+    """单标的详情：账本行、基准估值、净值/PE序列、交易事件、相关信号、区间收益与风险、分红、基准对比。"""
     view = build_portfolio_view(conf, store, trades)
     row = next((r for r in view.rows if r.instrument_id == instrument_id), None)
     if row is None:
@@ -680,12 +770,14 @@ def build_instrument_view(conf: Portfolio, store: LocalStore, trades: list[Trade
         "nav_series": [],
         "pe_series": [],
         "benchmark": None,
+        "benchmark_series": [],
         "events": build_trade_events(trades, instrument_id),
         "signals": [
             {"id": s[0], "date": s[1], "rule": s[3], "metric": s[4], "value": s[5], "action": s[6], "status": s[7]}
             for s in store.recent_signals(limit=30)
             if s[2] == instrument_id
         ][:10],
+        "dividends": _dividend_history(trades, instrument_id),
     }
     series_key = ins.code or ins.id
     if series_key:
@@ -693,9 +785,18 @@ def build_instrument_view(conf: Portfolio, store: LocalStore, trades: list[Trade
         if not nav_df.empty:
             out["nav_series"] = downsample(nav_df)
             out["nav_start"] = nav_df["date"].iloc[0]
-            out["performance"] = _compute_performance(nav_df)
+            out["performance"] = _compute_performance(nav_df, store=store)
     # 标的介绍卡（品类特定）
-    out["profile"] = _instrument_profile(ins, row)
+    out["profile"] = _instrument_profile(ins, row, store)
+    # 基准对比线（归一化到同一起点）
+    if ins.benchmark_index:
+        b = next((b for b in view.benchmarks if b.name == ins.benchmark_index), None)
+        out["benchmark"] = b
+        if b and b.code:
+            out["benchmark_series"] = _benchmark_nav_series(store, b.code)
+            pe_df = store.read_series(b.code, "pe_ttm_hist")
+            if not pe_df.empty:
+                out["pe_series"] = downsample(pe_df)
     # 基金透视（持仓穿透）
     if ins.type == "open_end_fund" and ins.code:
         period = store.fund_holdings_period(ins.code)

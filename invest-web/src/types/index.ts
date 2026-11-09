@@ -147,6 +147,8 @@ export interface HoldingDetail {
   stale?: boolean
   performance?: InstrumentPerformance
   profile?: InstrumentProfile
+  dividends?: DividendEntry[]
+  benchmark_series?: [number, number][]
 }
 
 export const ACTION_LABELS: Record<string, string> = {
@@ -332,6 +334,8 @@ export interface InstrumentPerformance {
   returns: Record<string, number | null>
   volatility: number | null
   max_drawdown: number | null
+  sharpe: number | null
+  risk_level: string
   trend: string
 }
 
@@ -342,4 +346,14 @@ export interface InstrumentProfile {
   code: string
   account: string
   fields: { label: string; value: string }[]
+}
+
+/** 分红历史条目 */
+export interface DividendEntry {
+  date: string
+  type: string
+  quantity: number
+  price: number
+  amount: number
+  note: string
 }
