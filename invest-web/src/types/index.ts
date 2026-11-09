@@ -145,6 +145,8 @@ export interface HoldingDetail {
   }
   /** 行情源超时降级返回缓存时为 true（S05） */
   stale?: boolean
+  performance?: InstrumentPerformance
+  profile?: InstrumentProfile
 }
 
 export const ACTION_LABELS: Record<string, string> = {
@@ -323,4 +325,21 @@ export interface DataHealth {
     { total_rows?: number; valid_rows?: number; corrupted_rows?: number; size_bytes?: number; last_modified: string }
   >
   healthy: boolean
+}
+
+/** 标的业绩表现（后端 _compute_performance） */
+export interface InstrumentPerformance {
+  returns: Record<string, number | null>
+  volatility: number | null
+  max_drawdown: number | null
+  trend: string
+}
+
+/** 标的概况卡（后端 _instrument_profile） */
+export interface InstrumentProfile {
+  title: string
+  type_label: string
+  code: string
+  account: string
+  fields: { label: string; value: string }[]
 }

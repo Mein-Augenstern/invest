@@ -563,8 +563,108 @@ def build_trade_events(trades: list[Trade], instrument_id: str) -> list[dict[str
     return events
 
 
+def _compute_performance(nav_df) -> dict:
+    """从净值序列计算区间收益率 + 风险指标（对标成熟基金 App 的业绩页）。
+
+    返回：{ returns: {m1|m3|m6|y1|y3|all: pct|null}, volatility: float|null,
+           max_drawdown: float|null, trend: str }
+    """
+    import numpy as np
+
+    if nav_df.empty or len(nav_df) < 2:
+        return {"returns": {}, "volatility": None, "max_drawdown": None, "trend": ""}
+    from datetime import datetime, timedelta
+
+    dates = pd.to_datetime(nav_df["date"])
+    values = nav_df["close"].astype(float).values
+    latest = values[-1]
+    now = datetime.now()
+
+    def _ret(days: int | None) -> float | None:
+        if days is None:
+            base = values[0]
+        else:
+            cutoff = now - timedelta(days=days)
+            mask = dates <= cutoff
+            if not mask.any():
+                return None
+            base = values[mask.values].astype(float)[-1]
+        if not base or base <= 0:
+            return None
+        return round((latest - base) / base, 4)
+
+    returns = {}
+    for label, days in [("m1", 30), ("m3", 90), ("m6", 182), ("y1", 365), ("y3", 1095), ("all", None)]:
+        r = _ret(days)
+        if r is not None:
+            returns[label] = r
+
+    # 年化波动率（日收益率 std × √252）
+    daily_ret = np.diff(values) / values[:-1]
+    vol = round(float(np.std(daily_ret) * np.sqrt(252)), 4) if len(daily_ret) > 10 else None
+
+    # 最大回撤
+    peak = np.maximum.accumulate(values)
+    dd = (values - peak) / peak
+    max_dd = round(float(dd.min()), 4) if len(values) > 1 else None
+
+    # 趋势判断（20 日均线 vs 60 日均线）
+    trend = ""
+    if len(values) >= 60:
+        ma20 = values[-20:].mean()
+        ma60 = values[-60:].mean()
+        if ma20 > ma60 * 1.01:
+            trend = "上行"
+        elif ma20 < ma60 * 0.99:
+            trend = "下行"
+        else:
+            trend = "震荡"
+
+    return {"returns": returns, "volatility": vol, "max_drawdown": max_dd, "trend": trend}
+
+
+def _instrument_profile(ins, row) -> dict:
+    """标的介绍卡（品类特定信息，对标券商/基金 App 的「概况」页）。"""
+    from .config import TYPE_LABELS
+
+    type_label = TYPE_LABELS.get(ins.type, ins.type)
+    profile: dict = {"type_label": type_label, "code": ins.code or "", "account": ins.account or "", "fields": []}
+
+    if ins.type == "bond":
+        profile["title"] = "债券"
+        profile["fields"] = [
+            {"label": "品种", "value": "国债/金融债" if not ins.code.startswith("sh1") else "企业债"},
+            {"label": "交易市场", "value": "交易所" if ins.code.startswith(("sh", "sz")) else "银行间"},
+            {"label": "信用等级", "value": "AAA（国债）" if not ins.code.startswith("sh1") else "见评级报告"},
+            {"label": "当前价格", "value": f"{row.price}" if row.price else "—"},
+        ]
+    elif ins.type in ("open_end_fund", "etf"):
+        profile["title"] = "基金"
+        profile["fields"] = [
+            {"label": "基金代码", "value": ins.code or "—"},
+            {"label": "跟踪指数", "value": ins.benchmark_index or "—"},
+            {"label": "基金类型", "value": "指数基金" if ins.benchmark_index else "主动管理"},
+            {"label": "账户", "value": ins.account or "—"},
+        ]
+    elif ins.type == "stock":
+        profile["title"] = "股票"
+        profile["fields"] = [
+            {"label": "证券代码", "value": ins.code or "—"},
+            {"label": "所属板块", "value": "沪市" if ins.code.startswith("6") else "深市" if ins.code.startswith(("0", "3")) else "—"},
+            {"label": "账户", "value": ins.account or "—"},
+        ]
+    elif ins.type == "wealth":
+        profile["title"] = "理财产品"
+        profile["fields"] = [
+            {"label": "产品类型", "value": "银行理财/固收"},
+            {"label": "净值频率", "value": "手动录入"},
+            {"label": "账户", "value": ins.account or "—"},
+        ]
+    return profile
+
+
 def build_instrument_view(conf: Portfolio, store: LocalStore, trades: list[Trade], instrument_id: str) -> dict[str, Any] | None:
-    """单标的详情：账本行、基准估值、净值/PE序列、交易事件、相关信号。"""
+    """单标的详情：账本行、基准估值、净值/PE序列、交易事件、相关信号、区间收益与风险。"""
     view = build_portfolio_view(conf, store, trades)
     row = next((r for r in view.rows if r.instrument_id == instrument_id), None)
     if row is None:
@@ -593,6 +693,9 @@ def build_instrument_view(conf: Portfolio, store: LocalStore, trades: list[Trade
         if not nav_df.empty:
             out["nav_series"] = downsample(nav_df)
             out["nav_start"] = nav_df["date"].iloc[0]
+            out["performance"] = _compute_performance(nav_df)
+    # 标的介绍卡（品类特定）
+    out["profile"] = _instrument_profile(ins, row)
     # 基金透视（持仓穿透）
     if ins.type == "open_end_fund" and ins.code:
         period = store.fund_holdings_period(ins.code)

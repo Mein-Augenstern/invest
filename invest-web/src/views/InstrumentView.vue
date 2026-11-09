@@ -399,6 +399,42 @@ onMounted(load)
         </el-tooltip>
       </div>
 
+      <!-- 标的概况 + 业绩表现 -->
+      <div v-if="data.profile || data.performance" class="grid grid-2 panel-gap">
+        <div v-if="data.profile" class="panel">
+          <div class="panel-title">
+            {{ data.profile.title }}概况
+            <el-tag size="small" effect="plain" :type="data.type === 'wealth' ? 'success' : data.type === 'bond' ? 'warning' : data.type === 'stock' ? 'danger' : 'primary'">
+              {{ data.profile.type_label }}
+            </el-tag>
+          </div>
+          <div class="profile-grid">
+            <div v-for="f in data.profile.fields" :key="f.label" class="profile-field">
+              <span class="pf-label muted">{{ f.label }}</span>
+              <span class="pf-value num">{{ f.value }}</span>
+            </div>
+          </div>
+        </div>
+        <div v-if="data.performance && Object.keys(data.performance.returns || {}).length" class="panel">
+          <div class="panel-title">
+            业绩表现
+            <el-tag v-if="data.performance.trend" :type="data.performance.trend === '上行' ? 'danger' : data.performance.trend === '下行' ? 'success' : 'info'" size="small">
+              {{ data.performance.trend }}
+            </el-tag>
+          </div>
+          <div class="perf-grid">
+            <div v-for="(val, key) in data.performance.returns" :key="key" class="perf-item">
+              <span class="pf-label muted">{{ { m1: '近1月', m3: '近3月', m6: '近6月', y1: '近1年', y3: '近3年', all: '成立以来' }[key] || key }}</span>
+              <span class="pf-value num" :class="pnlClass(val)">{{ fmtPct(val) }}</span>
+            </div>
+          </div>
+          <div v-if="data.performance.volatility !== null || data.performance.max_drawdown !== null" class="risk-row">
+            <span v-if="data.performance.volatility !== null" class="muted">年化波动率 <b class="num">{{ (data.performance.volatility * 100).toFixed(1) }}%</b></span>
+            <span v-if="data.performance.max_drawdown !== null" class="muted">最大回撤 <b class="num" :class="pnlClass(data.performance.max_drawdown)">{{ (data.performance.max_drawdown * 100).toFixed(1) }}%</b></span>
+          </div>
+        </div>
+      </div>
+
       <!-- 净值曲线 -->
       <div class="panel panel-gap">
         <div class="panel-title">
@@ -560,6 +596,31 @@ onMounted(load)
 </template>
 
 <style scoped>
+.profile-grid, .perf-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+.profile-field, .perf-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.pf-label {
+  font-size: 12px;
+}
+.pf-value {
+  font-size: 15px;
+  font-weight: 600;
+}
+.risk-row {
+  display: flex;
+  gap: 24px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--iv-border);
+  font-size: 13px;
+}
 /* 全局 .panel + .panel 的叠放间距不适用于栅格内并排的面板 / 指标卡（否则第 2 列起整体下沉） */
 .grid > .panel {
   margin-top: 0;
