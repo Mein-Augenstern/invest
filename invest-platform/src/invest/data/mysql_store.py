@@ -114,6 +114,16 @@ CREATE TABLE IF NOT EXISTS audit_log (
     PRIMARY KEY (id),
     KEY idx_audit_member (member_id, id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS instrument_catalog (
+    code VARCHAR(32) NOT NULL,
+    name VARCHAR(128) NOT NULL,
+    full_name VARCHAR(255) NOT NULL DEFAULT '',
+    itype VARCHAR(16) NOT NULL,
+    updated_at VARCHAR(32) NOT NULL,
+    PRIMARY KEY (code),
+    KEY idx_instr_cat_name (name),
+    KEY idx_instr_cat_type (itype)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 """
 
 
@@ -462,20 +472,45 @@ class MySQLStore:
                 return [int(r[0]) for r in cur.fetchall()]
 
     def search_catalog(self, query: str, limit: int = 20) -> list[tuple]:
-        """指数目录模糊搜索（标的新增的搜标的用）。"""
+        """标的目录 + 指数目录统一搜索。返回 (code, name, full_name, itype)。"""
         q = "%" + query + "%"
         with self._conn() as conn:
             with conn.cursor() as cur:
+                cur.execute("SELECT code, name, full_name, itype FROM instrument_catalog WHERE code = %s OR name = %s LIMIT 50", (query, query))
+                rows = cur.fetchall()
+                if not rows:
+                    cur.execute("SELECT code, name, full_name, itype FROM instrument_catalog WHERE name LIKE %s LIMIT 50", (q,))
+                    rows = cur.fetchall()
+                if rows:
+                    return [tuple(r) for r in rows[:limit]]
                 for sql, param in (
-                    ("SELECT index_code, name, full_name FROM csi_catalog WHERE name = %s OR index_code = %s LIMIT 50", (query, query)),
-                    ("SELECT index_code, name, full_name FROM csi_catalog WHERE name LIKE %s LIMIT 50", (q,)),
-                    ("SELECT index_code, name, full_name FROM csi_catalog WHERE full_name LIKE %s LIMIT 50", (q,)),
+                    ("SELECT index_code, name, full_name, 'index' FROM csi_catalog WHERE name = %s OR index_code = %s LIMIT 50", (query, query)),
+                    ("SELECT index_code, name, full_name, 'index' FROM csi_catalog WHERE name LIKE %s LIMIT 50", (q,)),
+                    ("SELECT index_code, name, full_name, 'index' FROM csi_catalog WHERE full_name LIKE %s LIMIT 50", (q,)),
                 ):
                     cur.execute(sql, param)
                     rows = cur.fetchall()
                     if rows:
                         return [tuple(r) for r in rows[:limit]]
         return []
+
+    def upsert_catalog_bulk(self, items: list[tuple]) -> int:
+        """批量写入标的目录。items: [(code, name, full_name, itype)]"""
+        now = datetime.now().isoformat(timespec="seconds")
+        data = [(c, n, f, t, now) for c, n, f, t in items]
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.executemany(
+                    "REPLACE INTO instrument_catalog(code, name, full_name, itype, updated_at) VALUES (%s,%s,%s,%s,%s)",
+                    data,
+                )
+        return len(data)
+
+    def catalog_count(self) -> int:
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT COUNT(*) FROM instrument_catalog")
+                return int(cur.fetchone()[0])
 
     # ---- 审计（S11 AC-6） ----
 

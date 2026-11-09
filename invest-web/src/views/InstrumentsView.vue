@@ -267,7 +267,7 @@ async function onShot(uploadFile: UploadFile) {
 
 const searchDialog = ref(false)
 const searchQuery = ref('')
-const searchResults = ref<{ code: string; name: string; full_name: string; benchmark_index: string; already_added: boolean }[]>([])
+const searchResults = ref<{ code: string; name: string; full_name: string; itype: string; suggested_type: string; benchmark_index: string; already_added: boolean }[]>([])
 const searching = ref(false)
 let searchTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -297,16 +297,15 @@ watch(searchQuery, (q) => {
 })
 
 /** 从搜索结果一键加入：预填新增弹窗 */
-function addFromCatalog(item: { code: string; name: string; benchmark_index: string }) {
+function addFromCatalog(item: { code: string; name: string; benchmark_index: string; suggested_type: string }) {
   searchDialog.value = false
   openDialog()
   form.name = item.name
   form.code = item.code
   form.benchmark_index = item.benchmark_index
-  // 智能推测类型
-  if (item.code.startsWith('s') || item.code.startsWith('sh') || item.code.startsWith('sz')) form.type = 'stock'
-  else if (item.code.length === 6 && /^[01]/.test(item.code)) form.type = 'etf'
-  else form.type = 'open_end_fund'
+  if (item.suggested_type && TYPES.some((t) => t.value === item.suggested_type)) {
+    form.type = item.suggested_type
+  }
   ElMessage.success(`已填入「${item.name}」，确认账户后保存`)
 }
 
@@ -459,17 +458,22 @@ onMounted(load)
     <div class="search-results">
       <div v-if="searching" class="muted search-empty"><el-skeleton :rows="3" animated /></div>
       <div v-else-if="!searchQuery.trim() || searchQuery.trim().length < 2" class="muted search-empty">
-        输入至少 2 个字开始搜索（覆盖 2388 个中证指数/基金基准）
+        输入基金名/代码/股票名搜（如：红利、贵州茅台、159928、000300）
       </div>
       <div v-else-if="!searchResults.length" class="muted search-empty">没有找到「{{ searchQuery }}」，试试其他关键词或手动新增</div>
       <div
         v-for="item in searchResults"
-        :key="item.code"
+        :key="item.code + item.itype"
         class="search-item"
         @click="!item.already_added && addFromCatalog(item)"
       >
         <div class="si-info">
-          <div class="si-name">{{ item.name }}</div>
+          <div class="si-name">
+            {{ item.name }}
+            <el-tag :type="item.itype === 'fund' ? 'primary' : item.itype === 'etf' ? 'success' : item.itype === 'stock' ? 'danger' : 'warning'" size="small" effect="plain" class="si-tag">
+              {{ { fund: '基金', etf: 'ETF', stock: '股票', bond: '债券', index: '指数' }[item.itype] || item.itype }}
+            </el-tag>
+          </div>
           <div class="si-code mono">{{ item.code }} · {{ item.full_name }}</div>
         </div>
         <el-tag v-if="item.already_added" type="info" size="small">已添加</el-tag>
@@ -550,6 +554,10 @@ onMounted(load)
   font-size: 12px;
   color: var(--iv-text-3);
   margin-top: 2px;
+}
+.si-tag {
+  margin-left: 6px;
+  vertical-align: middle;
 }
 .mono {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;

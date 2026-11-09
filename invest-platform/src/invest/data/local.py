@@ -111,6 +111,15 @@ CREATE TABLE IF NOT EXISTS trades (
     created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_trades_member_date ON trades(member_id, date);
+CREATE TABLE IF NOT EXISTS instrument_catalog (
+    code VARCHAR(32) PRIMARY KEY,
+    name VARCHAR(128) NOT NULL,
+    full_name VARCHAR(255) NOT NULL DEFAULT '',
+    itype VARCHAR(16) NOT NULL,
+    updated_at VARCHAR(32) NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_instr_cat_name ON instrument_catalog(name);
+CREATE INDEX IF NOT EXISTS idx_instr_cat_type ON instrument_catalog(itype);
 CREATE TABLE IF NOT EXISTS audit_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     member_id INTEGER NOT NULL,
@@ -418,18 +427,48 @@ class LocalStore:
             return [int(r[0]) for r in conn.execute("SELECT DISTINCT member_id FROM trades ORDER BY member_id").fetchall()]
 
     def search_catalog(self, query: str, limit: int = 20) -> list[tuple]:
-        """指数目录模糊搜索（标的新增的搜标的用）：精确 > 简称包含 > 全称包含。"""
+        """指数目录 + 标的目录统一搜索：精确 > 简称包含 > 全称包含。
+        返回 (code, name, full_name, itype)；itype: index|fund|etf|stock|bond。"""
         q = "%" + query + "%"
         with self._conn() as conn:
+            # 1) 标的目录（基金/ETF/股票——用户直接交易的品种）
+            rows = conn.execute(
+                "SELECT code, name, full_name, itype FROM instrument_catalog WHERE code = ? OR name = ? LIMIT 50",
+                (query, query),
+            ).fetchall()
+            if not rows:
+                rows = conn.execute(
+                    "SELECT code, name, full_name, itype FROM instrument_catalog WHERE name LIKE ? LIMIT 50", (q,)
+                ).fetchall()
+            if rows:
+                return rows[:limit]
+            # 2) 中证指数目录（做基准指数用）
             for sql, param in (
-                ("SELECT index_code, name, full_name FROM csi_catalog WHERE name = ? OR index_code = ? LIMIT 50", (query, query)),
-                ("SELECT index_code, name, full_name FROM csi_catalog WHERE name LIKE ? LIMIT 50", (q,)),
-                ("SELECT index_code, name, full_name FROM csi_catalog WHERE full_name LIKE ? LIMIT 50", (q,)),
+                ("SELECT index_code, name, full_name, 'index' FROM csi_catalog WHERE name = ? OR index_code = ? LIMIT 50", (query, query)),
+                ("SELECT index_code, name, full_name, 'index' FROM csi_catalog WHERE name LIKE ? LIMIT 50", (q,)),
+                ("SELECT index_code, name, full_name, 'index' FROM csi_catalog WHERE full_name LIKE ? LIMIT 50", (q,)),
             ):
                 rows = conn.execute(sql, param).fetchall()
                 if rows:
                     return rows[:limit]
         return []
+
+    def upsert_catalog_bulk(self, items: list[tuple]) -> int:
+        """批量写入标的目录（拉数时调用）。items: [(code, name, full_name, itype)]"""
+        from datetime import datetime
+
+        now = datetime.now().isoformat(timespec="seconds")
+        data = [(c, n, f, t, now) for c, n, f, t in items]
+        with self._conn() as conn:
+            conn.executemany(
+                "INSERT OR REPLACE INTO instrument_catalog(code, name, full_name, itype, updated_at) VALUES (?,?,?,?,?)",
+                data,
+            )
+        return len(data)
+
+    def catalog_count(self) -> int:
+        with self._conn() as conn:
+            return conn.execute("SELECT COUNT(*) FROM instrument_catalog").fetchone()[0]
 
     # ---- 审计（S11 AC-6：who/what/when/traceId，不含金额明文） ----
 

@@ -611,21 +611,23 @@ def instruments_save(request: Request, payload: dict = Body(...), store=Depends(
 
 @router.get("/instruments/catalog")
 def instruments_catalog(q: str = "", store=Depends(get_store), member_id=Depends(get_member_id)) -> dict:
-    """标的搜索（本地 csi_catalog，2388 个中证指数/基金基准）：搜到即可一键加入。"""
+    """标的搜索（instrument_catalog 基金/ETF/股票 + csi_catalog 指数）：搜到即可一键加入。"""
     q = (q or "").strip()
     if len(q) < 2:
         return {"results": []}
     rows = store.search_catalog(q, limit=20)
-    existing = {i.id for i in get_conf.__wrapped__(store, None, member_id).instruments} if hasattr(get_conf, "__wrapped__") else set()
-    # 不用 get_conf 依赖（会拉 yaml），直接查已有标的 id 做去重提示
     existing_ids = {r[0] for r in store.list_instruments(member_id)}
     from ..config import load_config
-    yaml_ids = {i.id for i in load_config(None).instruments} if store else set()
+    yaml_ids = {i.id for i in load_config(None).instruments}
+    # itype → suggested_type 映射（index 作基准，不直接可交易）
+    TYPE_MAP = {"fund": "open_end_fund", "etf": "etf", "stock": "stock", "bond": "bond", "index": "etf"}
     return {
         "results": [
             {
                 "code": r[0], "name": r[1], "full_name": r[2] or r[1],
-                "benchmark_index": r[1],
+                "itype": r[3] if len(r) > 3 else "index",
+                "suggested_type": TYPE_MAP.get(r[3] if len(r) > 3 else "index", "etf"),
+                "benchmark_index": r[1] if (len(r) > 3 and r[3] == "index") else "",
                 "already_added": r[0] in existing_ids or r[0] in yaml_ids,
             }
             for r in rows

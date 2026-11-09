@@ -58,6 +58,17 @@ def pull_and_evaluate(data_dir, config_path, store, log=print, provider=None) ->
 
     conf = load_portfolio(store, config_path)  # union 视角：拉数覆盖所有在管标的
     run_pull(conf, store, provider or AkshareProvider(), log=log)
+
+    # 标的目录同步（搜标的数据源，S12）：首次拉数时全量缓存（后续跳过）。
+    # 仅生产（MySQL）执行——本地/测试（SQLite）跳过，避免测试环境网络拉取。
+    import os as _os
+
+    if _os.environ.get("INVEST_DB_URL", "").startswith("mysql://"):
+        try:
+            if store.catalog_count() == 0:
+                _sync_instrument_catalog(store, log)
+        except Exception as e:  # noqa: BLE001 - 目录同步失败不影响拉数
+            log(f"[WARN] 标的目录同步失败: {type(e).__name__}")
     # S11：逐会员评估（行情是公共缓存，信号/账本是会员的）
     try:
         total = 0
@@ -77,6 +88,39 @@ def pull_and_evaluate(data_dir, config_path, store, log=print, provider=None) ->
     except Exception as e:  # noqa: BLE001 - 评估失败不影响拉数结果
         log(f"[WARN] 拉数后信号评估失败: {type(e).__name__}")
         return -1
+
+
+def _sync_instrument_catalog(store, log=print) -> int:
+    """标的目录同步（S12 搜索数据源）：akshare 全量清单 → instrument_catalog 表。
+
+    数据源：场外基金 ~28k / ETF ~1.7k / A 股 ~5.6k。首次全量 ~30s。
+    """
+    items: list[tuple] = []
+    import akshare as ak
+
+    try:
+        df = ak.stock_info_a_code_name()
+        items += [(str(r["code"]), str(r["name"]), str(r["name"]), "stock") for _, r in df.iterrows()]
+        log(f"[OK] 标的目录：A 股 {len(df)} 条")
+    except Exception as e:
+        log(f"[WARN] A 股清单拉取失败: {type(e).__name__}")
+    try:
+        df = ak.fund_name_em()
+        items += [(str(r["基金代码"]), str(r["基金简称"]), str(r["基金简称"]), "fund") for _, r in df.iterrows()]
+        log(f"[OK] 标的目录：场外基金 {len(df)} 条")
+    except Exception as e:
+        log(f"[WARN] 基金清单拉取失败: {type(e).__name__}")
+    try:
+        df = ak.fund_etf_spot_em()
+        items += [(str(r["代码"]), str(r["名称"]), str(r["名称"]), "etf") for _, r in df.iterrows()]
+        log(f"[OK] 标的目录：ETF {len(df)} 条")
+    except Exception as e:
+        log(f"[WARN] ETF 清单拉取失败: {type(e).__name__}")
+    if not items:
+        return 0
+    n = store.upsert_catalog_bulk(items)
+    log(f"[OK] 标的目录同步完成：{n} 条（累计 {store.catalog_count()}）")
+    return n
 
 
 def _record(ran: bool, reason: str, started: float, evaluated: int) -> None:

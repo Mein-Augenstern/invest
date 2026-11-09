@@ -170,9 +170,9 @@ export function parseInstrumentImage(file: File): Promise<{ text: string; instru
   return upload('/instruments/parse-image', file)
 }
 
-/** 搜索标的目录（中证指数 2388 个）→ 一键加入 */
+/** 搜索标的目录（基金/ETF/股票 + 中证指数）→ 一键加入 */
 export function searchInstrumentCatalog(q: string): Promise<{
-  results: { code: string; name: string; full_name: string; benchmark_index: string; already_added: boolean }[]
+  results: { code: string; name: string; full_name: string; itype: string; suggested_type: string; benchmark_index: string; already_added: boolean }[]
 }> {
   return request({ url: '/instruments/catalog', params: { q } })
 }
