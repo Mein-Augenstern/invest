@@ -856,6 +856,55 @@ def mp_signal_status(request: Request, sid: int, payload: dict = Body(...), stor
     return {"ok": True, "id": sid, "status": status}
 
 
+# ---- S12 投资策略库 ----
+
+
+@router.get("/strategies/templates")
+def strategy_templates(type: str = "", store=Depends(get_store), member_id=Depends(get_member_id)) -> dict:
+    """按品类返回适用策略模板 + 当前绑定状态。"""
+    from ..strategy.library import templates_for_type
+
+    templates = templates_for_type(type)
+    # 查已有绑定
+    bound = {r[0]: r[1] for r in []}  # TODO: 从 strategy_bindings 表读
+    for t in templates:
+        t["bound"] = t["id"] in bound
+    return {"templates": templates}
+
+
+@router.post("/strategies/evaluate")
+def strategy_evaluate(
+    payload: dict = Body(...),
+    conf=Depends(get_conf),
+    store=Depends(get_store),
+    member_id=Depends(get_member_id),
+) -> dict:
+    """评估某策略对某标的的当前建议信号。"""
+    from ..strategy.evaluators import EVALUATORS
+    from ..strategy.library import get_template
+
+    template_id = str(payload.get("template_id", ""))
+    instrument_id = str(payload.get("instrument_id", ""))
+    params = payload.get("params") or {}
+    tmpl = get_template(template_id)
+    if not tmpl:
+        return JSONResponse({"error": "未知策略模板"}, status_code=422)
+    ins = next((i for i in conf.instruments if i.id == instrument_id), None)
+    if not ins:
+        return JSONResponse({"error": "未找到该标的"}, status_code=404)
+    fn = EVALUATORS.get(tmpl.evaluator)
+    if not fn:
+        return JSONResponse({"error": "策略评估器未实现"}, status_code=422)
+    result = fn(store, ins, params)
+    return {"ok": True, "template": tmpl.name, "instrument": ins.name, **(result or {})}
+
+
+@router.get("/strategies/binding")
+def strategy_binding(instrument_id: str = "", member_id=Depends(get_member_id)) -> dict:
+    """查询某标的的策略绑定。"""
+    return {"binding": None}  # 简化版：暂不持久化绑定
+
+
 # ---- 运营端点（S11 AC-5：admin 守卫） ----
 
 

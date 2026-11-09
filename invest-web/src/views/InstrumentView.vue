@@ -13,6 +13,7 @@ import StateBlock from '@/components/StateBlock.vue'
 import StatCard from '@/components/StatCard.vue'
 import EChart from '@/components/charts/EChart.vue'
 import { FALL, RISE, SERIES_COLORS, type EChartsOption } from '@/components/charts/echarts'
+import { evaluateStrategy, getStrategyTemplates } from '@/api/invest'
 import { ApiError, errMsg } from '@/api/client'
 import { addNav, getInstrumentDetail } from '@/api/invest'
 import type { HoldingDetail, Signal, TradeEvent } from '@/types'
@@ -123,6 +124,45 @@ const periodChange = computed(() => {
   if (s.length < 2 || s[0][1] <= 0) return null
   return s[s.length - 1][1] / s[0][1] - 1
 })
+
+/* ---------- S12 投资策略库 ---------- */
+
+const strategies = ref<{ id: string; name: string; desc: string; params: { key: string; label: string; type: string; default?: number | string; unit?: string; options?: string[] }[] }[]>([])
+const activeStrategy = ref('')
+const strategyResult = ref<{ action: string; detail: string; severity: string } | null>(null)
+const strategyLoading = ref(false)
+
+const typeLabel = computed(() => {
+  const m: Record<string, string> = { open_end_fund: '基金', etf: 'ETF', stock: '股票', bond: '债券', wealth: '理财' }
+  return m[data.value?.type || ''] || '该品类'
+})
+
+async function loadStrategies() {
+  if (!data.value) return
+  try {
+    const r = await getStrategyTemplates(data.value.type)
+    strategies.value = r.templates
+  } catch {
+    strategies.value = []
+  }
+}
+
+async function selectStrategy(s: { id: string; name: string; params: { key: string; default?: unknown }[] }) {
+  if (activeStrategy.value === s.id || strategyLoading.value) return
+  activeStrategy.value = s.id
+  strategyResult.value = null
+  strategyLoading.value = true
+  try {
+    const params: Record<string, unknown> = {}
+    for (const p of s.params) params[p.key] = p.default
+    const r = await evaluateStrategy({ template_id: s.id, instrument_id: route.params.id as string, params })
+    strategyResult.value = { action: r.action, detail: r.detail, severity: r.severity }
+  } catch {
+    strategyResult.value = { action: '评估失败', detail: '请稍后重试或检查数据是否已拉取', severity: 'warn' }
+  } finally {
+    strategyLoading.value = false
+  }
+}
 
 /** 事件落点：在折线上线性插值（序列已降采样，事件日未必是采样点），保证标记压在曲线上 */
 function valueAt(series: [number, number][], ts: number): number {
@@ -350,7 +390,9 @@ async function submitNav() {
   }
 }
 
-onMounted(load)
+onMounted(() => {
+  load().then(() => loadStrategies())
+})
 </script>
 
 <template>
@@ -572,6 +614,27 @@ onMounted(load)
         </el-table>
       </div>
 
+      <!-- S12 投资策略库 -->
+      <div class="panel panel-gap">
+        <div class="panel-title">投资策略 <span class="muted hint">选择适合{{ typeLabel }}的策略，一键查看当前建议</span></div>
+        <div v-if="strategies.length" class="strategy-grid">
+          <div v-for="s in strategies" :key="s.id" class="strategy-card" :class="{ selected: activeStrategy === s.id }" @click="selectStrategy(s)">
+            <div class="sc-head">
+              <span class="sc-name">{{ s.name }}</span>
+              <el-tag :type="activeStrategy === s.id ? 'primary' : 'info'" size="small" effect="plain">{{ activeStrategy === s.id ? '已选中' : '点击选中' }}</el-tag>
+            </div>
+            <p class="sc-desc">{{ s.desc }}</p>
+            <div v-if="activeStrategy === s.id && strategyResult" class="sc-result">
+              <el-alert :type="strategyResult.severity === 'action' ? 'warning' : strategyResult.severity === 'warn' ? 'error' : 'success'" :closable="false" show-icon>
+                <template #title>{{ strategyResult.action }}</template>
+                {{ strategyResult.detail }}
+              </el-alert>
+            </div>
+          </div>
+        </div>
+        <el-empty v-else description="该品类暂无推荐策略" :image-size="60" />
+      </div>
+
       <!-- 交易事件 + 该标的信号 -->
       <div class="grid grid-2 panel-gap">
         <div class="panel">
@@ -637,6 +700,45 @@ onMounted(load)
 </template>
 
 <style scoped>
+.strategy-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 14px;
+}
+.strategy-card {
+  border: 1px solid var(--iv-border);
+  border-radius: 10px;
+  padding: 18px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  background: var(--iv-bg);
+}
+.strategy-card:hover {
+  border-color: var(--iv-primary);
+}
+.strategy-card.selected {
+  border-color: var(--iv-primary);
+  background: var(--el-color-primary-light-9);
+}
+.sc-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.sc-name {
+  font-weight: 600;
+  font-size: 15px;
+}
+.sc-desc {
+  font-size: 13px;
+  color: var(--iv-text-2);
+  margin: 0 0 8px;
+  line-height: 1.5;
+}
+.sc-result {
+  margin-top: 10px;
+}
 .profile-grid, .perf-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);

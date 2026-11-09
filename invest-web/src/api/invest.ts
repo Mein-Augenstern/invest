@@ -170,6 +170,25 @@ export function parseInstrumentImage(file: File): Promise<{ text: string; instru
   return upload('/instruments/parse-image', file)
 }
 
+/** S12 策略库：按品类获取模板 */
+export function getStrategyTemplates(type: string): Promise<{
+  templates: { id: string; name: string; desc: string; params: { key: string; label: string; type: string; default?: number | string; unit?: string; options?: string[]; placeholder?: string }[]; types: string[]; bound?: boolean }[]
+}> {
+  return request({ url: '/strategies/templates', params: { type } })
+}
+
+/** S12 策略库：评估当前建议 */
+export function evaluateStrategy(payload: { template_id: string; instrument_id: string; params?: Record<string, unknown> }): Promise<{
+  ok: boolean
+  template: string
+  instrument: string
+  action: string
+  detail: string
+  severity: string
+}> {
+  return request({ url: '/strategies/evaluate', method: 'POST', data: payload })
+}
+
 /** 搜索标的目录（基金/ETF/股票 + 中证指数）→ 一键加入 */
 export function searchInstrumentCatalog(q: string): Promise<{
   results: { code: string; name: string; full_name: string; itype: string; suggested_type: string; benchmark_index: string; already_added: boolean }[]
