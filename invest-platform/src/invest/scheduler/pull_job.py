@@ -59,13 +59,13 @@ def pull_and_evaluate(data_dir, config_path, store, log=print, provider=None) ->
     conf = load_portfolio(store, config_path)  # union 视角：拉数覆盖所有在管标的
     run_pull(conf, store, provider or AkshareProvider(), log=log)
 
-    # 标的目录同步（搜标的数据源，S12）：首次拉数时全量缓存（后续跳过）。
+    # 标的目录同步（搜标的数据源，S12）：空表首次全量 / 超过 7 天定期刷新。
     # 仅生产（MySQL）执行——本地/测试（SQLite）跳过，避免测试环境网络拉取。
     import os as _os
 
     if _os.environ.get("INVEST_DB_URL", "").startswith("mysql://"):
         try:
-            if store.catalog_count() == 0:
+            if _catalog_stale(store):
                 _sync_instrument_catalog(store, log)
         except Exception as e:  # noqa: BLE001 - 目录同步失败不影响拉数
             log(f"[WARN] 标的目录同步失败: {type(e).__name__}")
@@ -88,6 +88,29 @@ def pull_and_evaluate(data_dir, config_path, store, log=print, provider=None) ->
     except Exception as e:  # noqa: BLE001 - 评估失败不影响拉数结果
         log(f"[WARN] 拉数后信号评估失败: {type(e).__name__}")
         return -1
+
+
+def _catalog_stale(store) -> bool:
+    """目录是否需要刷新：空表（首次）或上次同步超过 7 天。"""
+    from datetime import datetime, timedelta
+
+    if store.catalog_count() == 0:
+        return True
+    # 双后端统一接口：取目录最新 updated_at（无此方法时视为不刷新）
+    try:
+        with store._conn() as conn:
+            if hasattr(store, "db_path"):  # SQLite
+                row = conn.execute("SELECT MAX(updated_at) FROM instrument_catalog").fetchone()
+            else:  # MySQL
+                with conn.cursor() as cur:
+                    cur.execute("SELECT MAX(updated_at) FROM instrument_catalog")
+                    row = cur.fetchone()
+        if not row or not row[0]:
+            return True
+        last = datetime.fromisoformat(row[0])
+        return datetime.now() - last > timedelta(days=7)
+    except Exception:
+        return False
 
 
 def _sync_instrument_catalog(store, log=print) -> int:
