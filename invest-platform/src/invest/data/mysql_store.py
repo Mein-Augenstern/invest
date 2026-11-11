@@ -120,9 +120,8 @@ CREATE TABLE IF NOT EXISTS instrument_catalog (
     full_name VARCHAR(255) NOT NULL DEFAULT '',
     itype VARCHAR(16) NOT NULL,
     updated_at VARCHAR(32) NOT NULL,
-    PRIMARY KEY (code),
-    KEY idx_instr_cat_name (name),
-    KEY idx_instr_cat_type (itype)
+    PRIMARY KEY (code, itype),
+    KEY idx_instr_cat_name (name)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 """
 

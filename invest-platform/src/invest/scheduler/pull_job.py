@@ -114,35 +114,88 @@ def _catalog_stale(store) -> bool:
 
 
 def _sync_instrument_catalog(store, log=print) -> int:
-    """标的目录同步（S12 搜索数据源）：akshare 全量清单 → instrument_catalog 表。
+    """标的目录精选同步：每品类 Top 500（共 ~2000 条）。
 
-    数据源：场外基金 ~28k / ETF ~1.7k / A 股 ~5.6k。首次全量 ~30s。
+    降级链：实时行情排序 → 静态清单取前 500 → 跳过该品类。
     """
     items: list[tuple] = []
     import akshare as ak
+    import pandas as pd
 
-    try:
-        df = ak.stock_info_a_code_name()
-        items += [(str(r["code"]), str(r["name"]), str(r["name"]), "stock") for _, r in df.iterrows()]
-        log(f"[OK] 标的目录：A 股 {len(df)} 条")
-    except Exception as e:
-        log(f"[WARN] A 股清单拉取失败: {type(e).__name__}")
-    try:
-        df = ak.fund_name_em()
-        items += [(str(r["基金代码"]), str(r["基金简称"]), str(r["基金简称"]), "fund") for _, r in df.iterrows()]
-        log(f"[OK] 标的目录：场外基金 {len(df)} 条")
-    except Exception as e:
-        log(f"[WARN] 基金清单拉取失败: {type(e).__name__}")
+    # ---- ETF：按成交额排序 → 降级取全量前 500 ----
     try:
         df = ak.fund_etf_spot_em()
+        vol_col = next((c for c in df.columns if "成交额" in c or "成交" in c), None)
+        if vol_col:
+            df = df.sort_values(vol_col, ascending=False)
+        df = df.head(500)
         items += [(str(r["代码"]), str(r["名称"]), str(r["名称"]), "etf") for _, r in df.iterrows()]
-        log(f"[OK] 标的目录：ETF {len(df)} 条")
+        log(f"[OK] 标的目录：ETF top {len(df)}")
+    except Exception:
+        log("[WARN] ETF 实时行情失败，降级为静态清单")
+        try:
+            df = ak.fund_name_em()
+            # ETF 代码以 15/16/51/52/56/58 开头（深/沪）
+            etf_df = df[df["基金代码"].str.startswith(("15", "16", "51", "52", "56", "58"))].head(500)
+            items += [(str(r["基金代码"]), str(r["基金简称"]), str(r["基金简称"]), "etf") for _, r in etf_df.iterrows()]
+            log(f"[OK] 标的目录：ETF 降级 {len(etf_df)} 条")
+        except Exception as e2:
+            log(f"[WARN] ETF 全部失败: {type(e2).__name__}")
+
+    # ---- Stock：按市值排序 → 降级取沪深各 250 ----
+    try:
+        df = ak.stock_zh_a_spot_em()
+        cap_col = next((c for c in df.columns if "总市值" in c), None)
+        if cap_col:
+            df[cap_col] = df[cap_col].astype(str).str.replace(",", "").astype(float)
+            df = df.sort_values(cap_col, ascending=False)
+        df = df.head(500)
+        items += [(str(r["代码"]), str(r["名称"]), str(r["名称"]), "stock") for _, r in df.iterrows()]
+        log(f"[OK] 标的目录：A 股 top {len(df)}")
+    except Exception:
+        log("[WARN] A 股实时行情失败，降级为静态清单")
+        try:
+            df = ak.stock_info_a_code_name()
+            # 沪市（60/68 开头）+ 深市（00/30 开头）各取一半，确保两市都有
+            sh = df[df["code"].str.startswith(("60", "68"))].head(250)
+            sz = df[df["code"].str.startswith(("00", "30"))].head(250)
+            mixed = pd.concat([sh, sz])
+            items += [(str(r["code"]), str(r["name"]), str(r["name"]), "stock") for _, r in mixed.iterrows()]
+            log(f"[OK] 标的目录：A 股降级 {len(mixed)} 条（沪 {len(sh)} + 深 {len(sz)}）")
+        except Exception as e2:
+            log(f"[WARN] A 股全部失败: {type(e2).__name__}")
+
+    # ---- Fund：场外基金前 500 ----
+    try:
+        df = ak.fund_name_em()
+        df = df.head(500)
+        items += [(str(r["基金代码"]), str(r["基金简称"]), str(r["基金简称"]), "fund") for _, r in df.iterrows()]
+        log(f"[OK] 标的目录：场外基金 top {len(df)}")
     except Exception as e:
-        log(f"[WARN] ETF 清单拉取失败: {type(e).__name__}")
+        log(f"[WARN] 基金清单拉取失败: {type(e).__name__}")
+
+    # ---- Bond：交易所债券（动态列名探测） ----
+    try:
+        df = ak.bond_zh_hs_spot()
+        code_col = next((c for c in df.columns if "代码" in c), df.columns[0])
+        name_col = next((c for c in df.columns if "名称" in c or "简称" in c), df.columns[1])
+        df = df.head(500)
+        items += [(str(r[code_col]), str(r[name_col]), str(r[name_col]), "bond") for _, r in df.iterrows()]
+        log(f"[OK] 标的目录：债券 top {len(df)}")
+    except Exception as e:
+        log(f"[WARN] 债券清单拉取失败: {type(e).__name__}")
+
     if not items:
         return 0
+    # 清空旧数据 → 精选写入（不留 38k 全量残留）
+    with store._conn() as conn:
+        if hasattr(store, "db_path"):
+            conn.execute("DELETE FROM instrument_catalog")
+        else:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM instrument_catalog")
     n = store.upsert_catalog_bulk(items)
-    log(f"[OK] 标的目录同步完成：{n} 条（累计 {store.catalog_count()}）")
+    log(f"[OK] 标的目录精选同步完成：{n} 条（累计 {store.catalog_count()}）")
     return n
 
 

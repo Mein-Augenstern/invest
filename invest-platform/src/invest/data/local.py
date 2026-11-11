@@ -112,11 +112,12 @@ CREATE TABLE IF NOT EXISTS trades (
 );
 CREATE INDEX IF NOT EXISTS idx_trades_member_date ON trades(member_id, date);
 CREATE TABLE IF NOT EXISTS instrument_catalog (
-    code VARCHAR(32) PRIMARY KEY,
+    code VARCHAR(32) NOT NULL,
     name VARCHAR(128) NOT NULL,
     full_name VARCHAR(255) NOT NULL DEFAULT '',
     itype VARCHAR(16) NOT NULL,
-    updated_at VARCHAR(32) NOT NULL
+    updated_at VARCHAR(32) NOT NULL,
+    PRIMARY KEY (code, itype)
 );
 CREATE INDEX IF NOT EXISTS idx_instr_cat_name ON instrument_catalog(name);
 CREATE INDEX IF NOT EXISTS idx_instr_cat_type ON instrument_catalog(itype);
