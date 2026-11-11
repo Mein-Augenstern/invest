@@ -135,14 +135,14 @@ def _sync_instrument_catalog(store, log=print) -> int:
         log("[WARN] ETF 实时行情失败，降级为静态清单")
         try:
             df = ak.fund_name_em()
-            # ETF 代码以 15/16/51/52/56/58 开头（深/沪）
-            etf_df = df[df["基金代码"].str.startswith(("15", "16", "51", "52", "56", "58"))].head(500)
+            # ETF 代码以 15/16/51/52/56/58 开头（深/沪），全量纳入（总量 ~1700 不截断）
+            etf_df = df[df["基金代码"].str.startswith(("15", "16", "51", "52", "56", "58"))]
             items += [(str(r["基金代码"]), str(r["基金简称"]), str(r["基金简称"]), "etf") for _, r in etf_df.iterrows()]
-            log(f"[OK] 标的目录：ETF 降级 {len(etf_df)} 条")
+            log(f"[OK] 标的目录：ETF 降级 {len(etf_df)} 条（全量）")
         except Exception as e2:
             log(f"[WARN] ETF 全部失败: {type(e2).__name__}")
 
-    # ---- Stock：按市值排序 → 降级取沪深各 250 ----
+    # ---- Stock：按市值排序 → 降级用 CSI300 成分股 + 沪深各补 ----
     try:
         df = ak.stock_zh_a_spot_em()
         cap_col = next((c for c in df.columns if "总市值" in c), None)
@@ -153,17 +153,28 @@ def _sync_instrument_catalog(store, log=print) -> int:
         items += [(str(r["代码"]), str(r["名称"]), str(r["名称"]), "stock") for _, r in df.iterrows()]
         log(f"[OK] 标的目录：A 股 top {len(df)}")
     except Exception:
-        log("[WARN] A 股实时行情失败，降级为静态清单")
+        log("[WARN] A 股实时行情失败，降级为 CSI300 + 沪深补充")
         try:
-            df = ak.stock_info_a_code_name()
-            # 沪市（60/68 开头）+ 深市（00/30 开头）各取一半，确保两市都有
-            sh = df[df["code"].str.startswith(("60", "68"))].head(250)
-            sz = df[df["code"].str.startswith(("00", "30"))].head(250)
-            mixed = pd.concat([sh, sz])
-            items += [(str(r["code"]), str(r["name"]), str(r["name"]), "stock") for _, r in mixed.iterrows()]
-            log(f"[OK] 标的目录：A 股降级 {len(mixed)} 条（沪 {len(sh)} + 深 {len(sz)}）")
-        except Exception as e2:
-            log(f"[WARN] A 股全部失败: {type(e2).__name__}")
+            # 优先用 CSI 300 成分股（市值前 300，含茅台/五粮液等核心标的）
+            csi = ak.index_stock_cons_csindex(symbol="000300")
+            items += [(str(r["成分券代码"]), str(r["成分券名称"]), str(r["成分券名称"]), "stock") for _, r in csi.iterrows()]
+            log(f"[OK] 标的目录：A 股 CSI300 {len(csi)} 条")
+            # 补充深市前 200（CSI300 偏沪市）
+            all_stocks = ak.stock_info_a_code_name()
+            sz = all_stocks[all_stocks["code"].str.startswith(("00", "30"))].head(200)
+            items += [(str(r["code"]), str(r["name"]), str(r["name"]), "stock") for _, r in sz.iterrows()]
+            log(f"[OK] 标的目录：A 股补充深市 {len(sz)} 条")
+        except Exception:
+            log("[WARN] CSI300 也失败，最终降级为代码序")
+            try:
+                df = ak.stock_info_a_code_name()
+                sh = df[df["code"].str.startswith(("60", "68"))].head(250)
+                sz = df[df["code"].str.startswith(("00", "30"))].head(250)
+                mixed = pd.concat([sh, sz])
+                items += [(str(r["code"]), str(r["name"]), str(r["name"]), "stock") for _, r in mixed.iterrows()]
+                log(f"[OK] 标的目录：A 股最终降级 {len(mixed)} 条")
+            except Exception as e2:
+                log(f"[WARN] A 股全部失败: {type(e2).__name__}")
 
     # ---- Fund：场外基金前 500 ----
     try:
