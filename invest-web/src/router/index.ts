@@ -38,6 +38,7 @@ const routes: RouteRecordRaw[] = [
     children: [
       { path: '', name: 'overview', component: () => import('@/views/OverviewView.vue'), meta: { title: '总览' } },
       { path: 'instrument/:id', name: 'instrument', component: () => import('@/views/InstrumentView.vue'), meta: { title: '标的详情' } },
+      { path: 'instrument-preview/:code', name: 'instrument-preview', component: () => import('@/views/InstrumentPreview.vue'), meta: { title: '标的预览' } },
       { path: 'trades', name: 'trades', component: () => import('@/views/TradesView.vue'), meta: { title: '流水' } },
       { path: 'summary', name: 'summary', component: () => import('@/views/SummaryView.vue'), meta: { title: '统计' } },
       { path: 'signals', name: 'signals', component: () => import('@/views/SignalsView.vue'), meta: { title: '信号' } },

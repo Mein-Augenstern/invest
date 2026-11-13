@@ -654,17 +654,21 @@ def instruments_catalog(
 
 @router.get("/instruments/preview")
 def instruments_preview(code: str, itype: str = "fund", store=Depends(get_store)) -> dict:
-    """标的预览：按需拉取行情/净值做迷你业绩展示（不落库，加入后才持久化）。"""
-    from ..reporting import _compute_performance
+    """标的完整预览：拉取行情→持久化到 series 表→返回与 /instrument/{id} 同结构的数据。
 
-    series_key = code
-    kind_map = {"fund": "fund_nav", "etf": "etf_close", "stock": "stock_close", "bond": "bond_close"}
+    首次预览从 akshare 拉取并落库（后续秒开）；返回格式对齐 build_instrument_view，
+    前端复用标的详情页组件渲染。preview=true 标记前端隐藏写操作按钮。
+    """
+    from ..config import Instrument
+    from ..reporting import _compute_performance, downsample, _instrument_profile
+
+    kind_map = {"fund": "fund_nav", "etf": "etf_close", "stock": "stock_close", "bond": "bond_close", "index": "index_close"}
     kind = kind_map.get(itype, "fund_nav")
-    nav_df = store.read_series(series_key, kind)
+    nav_df = store.read_series(code, kind)
 
-    # 本地无数据时尝试从 akshare 拉取（即席预览，不落库）
+    # 本地无缓存 → 从 akshare 拉取并持久化
     fetched = False
-    if nav_df.empty:
+    if nav_df.empty or len(nav_df) < 2:
         try:
             import akshare as ak
 
@@ -672,36 +676,79 @@ def instruments_preview(code: str, itype: str = "fund", store=Depends(get_store)
                 raw = ak.fund_open_fund_info_em(symbol=code, indicator="单位净值走势")
                 if raw is not None and not raw.empty:
                     nav_df = raw.rename(columns={"净值日期": "date", "单位净值": "close"})[["date", "close"]]
+                    store.upsert_series(code, kind, nav_df, source="preview-fetch")
                     fetched = True
             elif itype == "stock":
-                raw = ak.stock_zh_a_hist(symbol=code, period="daily", start_date="20240101", adjust="qfq")
+                raw = ak.stock_zh_a_hist(symbol=code, period="daily", start_date="20150101", adjust="qfq")
                 if raw is not None and not raw.empty:
                     nav_df = raw.rename(columns={"日期": "date", "收盘": "close"})[["date", "close"]]
+                    store.upsert_series(code, kind, nav_df, source="preview-fetch")
                     fetched = True
         except Exception:
             pass
 
     if nav_df.empty or len(nav_df) < 2:
-        return {"has_data": False, "name": "", "code": code, "itype": itype}
+        return {"preview": True, "has_data": False, "id": code, "name": code, "code": code, "type": itype}
 
-    # 计算业绩
-    perf = _compute_performance(nav_df)
-    from ..reporting import downsample
+    # 构造虚拟 Instrument 供 profile 生成
+    from ..config import TYPE_LABELS
+    type_label = TYPE_LABELS.get(itype, itype)
+    virtual_ins = Instrument(
+        id=code, type=itype, name=code, code=code,
+        benchmark_index="", benchmark_tr_code="", account="",
+    )
+    from dataclasses import dataclass as _dc
 
-    nav_series = downsample(nav_df)
-    latest = float(nav_df["close"].iloc[-1])
-    prev = float(nav_df["close"].iloc[-2]) if len(nav_df) >= 2 else None
-    daily_chg = round((latest - prev) / prev, 4) if prev and prev > 0 else None
+    @_dc
+    class _Row:
+        price: float | None = None
+        quantity: float = 0
+        avg_cost: float | None = None
+        market_value: float | None = None
+        unrealized: float | None = None
+        unrealized_pct: float | None = None
+        realized_pnl: float | None = None
+        cash_dividend: float | None = None
+        xirr: float | None = None
+        xirr_error: bool = True
+        state: str = "noprice"
+
+    latest_val = float(nav_df["close"].iloc[-1])
+    row = _Row(price=latest_val, state="full")
+
+    perf = _compute_performance(nav_df, store=store)
+    profile = _instrument_profile(virtual_ins, row, store)
 
     return {
+        "preview": True,
         "has_data": True,
         "fetched": fetched,
+        "id": code,
+        "name": code,
         "code": code,
-        "itype": itype,
-        "latest": round(latest, 4),
-        "daily_chg": daily_chg,
-        "nav_series": nav_series,
+        "type": itype,
+        "type_label": type_label,
+        "account_name": "",
+        "row": {
+            "id": code, "name": code, "account": "", "type": itype, "type_label": type_label,
+            "state": "full", "quantity": 0, "price": latest_val,
+            "price_date": str(nav_df["date"].iloc[-1]),
+            "avg_cost": None, "market_value": None,
+            "unrealized": None, "unrealized_pct": None,
+            "realized_pnl": None, "cash_dividend": None,
+            "xirr": None, "xirr_error": True,
+        },
+        "nav_series": downsample(nav_df),
+        "nav_start": str(nav_df["date"].iloc[0]),
+        "pe_series": [],
+        "benchmark": None,
+        "benchmark_series": [],
+        "events": [],
+        "signals": [],
+        "dividends": [],
         "performance": perf,
+        "profile": profile,
+        "stale": False,
     }
 
 

@@ -177,16 +177,22 @@ export function getStrategyTemplates(type: string): Promise<{
   return request({ url: '/strategies/templates', params: { type } })
 }
 
-/** 标的预览（按需拉取行情做迷你业绩展示） */
+/** 标的完整预览（返回与 /instrument/{id} 同结构 + preview=true） */
 export function previewInstrument(code: string, itype: string): Promise<{
+  preview: boolean
   has_data: boolean
   fetched: boolean
+  id: string
+  name: string
   code: string
-  itype: string
-  latest: number
-  daily_chg: number | null
+  type: string
+  type_label?: string
+  account_name: string
+  row: Record<string, unknown> & { price: number | null; price_date: string; state: string }
   nav_series: [number, number][]
-  performance: { returns: Record<string, number | null>; volatility: number | null; max_drawdown: number | null; sharpe: number | null; risk_level: string; trend: string }
+  nav_start?: string
+  performance?: { returns: Record<string, number | null>; volatility: number | null; max_drawdown: number | null; sharpe: number | null; risk_level: string; trend: string }
+  profile?: { title: string; type_label: string; code: string; account: string; fields: { label: string; value: string }[] }
 }> {
   return request({ url: '/instruments/preview', params: { code, itype }, timeoutMs: 30_000 })
 }
