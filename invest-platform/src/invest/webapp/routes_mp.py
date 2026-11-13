@@ -666,24 +666,33 @@ def instruments_preview(code: str, itype: str = "fund", store=Depends(get_store)
     kind = kind_map.get(itype, "fund_nav")
     nav_df = store.read_series(code, kind)
 
-    # 本地无缓存 → 从 akshare 拉取并持久化
+    # 本地无缓存 → 从 akshare 按品类拉取并持久化
     fetched = False
     if nav_df.empty or len(nav_df) < 2:
         try:
             import akshare as ak
 
-            if itype in ("fund", "etf"):
+            if itype == "fund":
                 raw = ak.fund_open_fund_info_em(symbol=code, indicator="单位净值走势")
                 if raw is not None and not raw.empty:
                     nav_df = raw.rename(columns={"净值日期": "date", "单位净值": "close"})[["date", "close"]]
-                    store.upsert_series(code, kind, nav_df, source="preview-fetch")
-                    fetched = True
-            elif itype == "stock":
+            elif itype in ("etf", "stock"):
                 raw = ak.stock_zh_a_hist(symbol=code, period="daily", start_date="20150101", adjust="qfq")
                 if raw is not None and not raw.empty:
                     nav_df = raw.rename(columns={"日期": "date", "收盘": "close"})[["date", "close"]]
-                    store.upsert_series(code, kind, nav_df, source="preview-fetch")
-                    fetched = True
+            elif itype == "bond":
+                raw = ak.bond_zh_hs_hist(symbol=code)
+                if raw is not None and not raw.empty:
+                    nav_df = raw.rename(columns={"日期": "date", "收盘": "close"})[["date", "close"]]
+            elif itype == "index":
+                bench_code = store.resolve_index_code(code) or code
+                raw = store.read_series(bench_code, "index_close")
+                if not raw.empty:
+                    nav_df = raw
+
+            if nav_df is not None and not nav_df.empty and len(nav_df) >= 2:
+                store.upsert_series(code, kind, nav_df, source="preview-fetch")
+                fetched = True
         except Exception:
             pass
 

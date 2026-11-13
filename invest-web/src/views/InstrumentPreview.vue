@@ -79,7 +79,7 @@ onMounted(load)
     </template>
   </PageHeader>
 
-  <StateBlock :loading="loading" :error="error" :empty="!data?.has_data" :has-data="!!data?.has_data" empty-text="暂无行情数据" @retry="load">
+  <StateBlock :loading="loading" :error="error" :empty="!data?.has_data" :has-data="!!data?.has_data" :empty-text="`暂无「${code}」的行情数据。部分新品种/债券可能暂无历史数据，可直接加入后手动拉数。`" @retry="load">
     <template v-if="data?.has_data">
       <!-- 指标卡 -->
       <div class="grid grid-4">
