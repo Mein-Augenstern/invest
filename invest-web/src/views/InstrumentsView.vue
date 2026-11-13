@@ -3,7 +3,7 @@
   从截图识别（OCR + AI 反显表单，依赖 macOS Vision，Linux 部署 422 属预期降级）· 删除双保护（持仓 409 / yaml 种子 404）。
 -->
 <script setup lang="ts">
-import { computed, nextTick, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import {
   ElMessage,
   ElMessageBox,
@@ -16,7 +16,7 @@ import { Picture, Plus } from '@element-plus/icons-vue'
 import PageHeader from '@/components/PageHeader.vue'
 import StateBlock from '@/components/StateBlock.vue'
 import { ApiError, errMsg } from '@/api/client'
-import { deleteInstrument, getInstruments, parseInstrumentImage, saveInstrument, searchInstrumentCatalog } from '@/api/invest'
+import { deleteInstrument, getInstruments, parseInstrumentImage, saveInstrument, searchInstrumentCatalog, browseInstrumentCatalog } from '@/api/invest'
 import type { InstrumentForm, InstrumentRow } from '@/types'
 import { fmtQty } from '@/utils/format'
 
@@ -31,7 +31,7 @@ const TYPES = [
 const typeLabel = (t: string) => TYPES.find((x) => x.value === t)?.label || t || '—'
 const typeGroup = (t: string) => TYPES.find((x) => x.value === t)?.group || 'other'
 
-/** 资产大类 Tab（家庭四类 + 全部） */
+/** 资产大类 Tab（家庭四类 + 全部 + 标的目录） */
 const GROUPS = [
   { value: '', label: '全部', icon: '' },
   { value: 'fund', label: '基金', icon: '🍬' },
@@ -40,6 +40,85 @@ const GROUPS = [
   { value: 'wealth', label: '理财', icon: '💰' },
 ]
 const activeGroup = ref('')
+
+/* ---------- 标的目录（可浏览 4000+ 热门标的） ---------- */
+const CATALOG_TYPES = [
+  { value: '', label: '全部' },
+  { value: 'fund', label: '基金' },
+  { value: 'etf', label: 'ETF' },
+  { value: 'stock', label: '股票' },
+  { value: 'bond', label: '债券' },
+]
+const catalogActive = ref(false)
+const catalogType = ref('')
+const catalogSearch = ref('')
+const catalogRows = ref<{ code: string; name: string; full_name: string; itype: string; suggested_type: string; benchmark_index: string; already_added: boolean }[]>([])
+const catalogTotal = ref(0)
+const catalogPage = ref(1)
+const catalogLoading = ref(false)
+let catalogTimer: ReturnType<typeof setTimeout> | null = null
+
+async function loadCatalog() {
+  catalogLoading.value = true
+  try {
+    const r = await browseInstrumentCatalog({
+      q: catalogSearch.value.trim() || undefined,
+      page: catalogPage.value,
+      page_size: 50,
+      itype: catalogType.value || undefined,
+    })
+    catalogRows.value = r.results
+    catalogTotal.value = r.total
+  } catch {
+    catalogRows.value = []
+  } finally {
+    catalogLoading.value = false
+  }
+}
+
+watch(catalogSearch, () => {
+  if (catalogTimer) clearTimeout(catalogTimer)
+  catalogTimer = setTimeout(() => {
+    catalogPage.value = 1
+    loadCatalog()
+  }, 400)
+})
+
+watch(catalogType, () => {
+  catalogPage.value = 1
+  loadCatalog()
+})
+
+watch(catalogActive, (v) => {
+  if (v && !catalogRows.value.length) loadCatalog()
+})
+
+/** 目录品类标签颜色/文案 */
+function catTagColor(itype: string): 'primary' | 'success' | 'danger' | 'warning' | 'info' {
+  const map: Record<string, 'primary' | 'success' | 'danger' | 'warning' | 'info'> = { fund: 'primary', etf: 'success', stock: 'danger', bond: 'warning', index: 'info' }
+  return map[itype] || 'info'
+}
+function catTypeLabel(itype: string): string {
+  const map: Record<string, string> = { fund: '基金', etf: 'ETF', stock: '股票', bond: '债券', index: '指数' }
+  return map[itype] || itype
+}
+
+/** 从目录一键加入我的标的（接受任意行对象，取需要的字段） */
+async function addFromBrowse(item: Record<string, unknown>) {
+  const code = String(item.code || "")
+  const name = String(item.name || "")
+  const suggested_type = String(item.suggested_type || "")
+  const benchmark_index = String(item.benchmark_index || "")
+  if (item.already_added) return
+  openDialog()
+  form.name = name
+  form.code = code
+  form.benchmark_index = benchmark_index
+  if (suggested_type && TYPES.some((t) => t.value === suggested_type)) {
+    form.type = suggested_type
+  }
+  ElMessage.success(`已填入「${name}」，请选择账户后保存`)
+}
 
 /** 品类统计（按当前标的列表实时算） */
 const groupStats = computed(() => {
@@ -355,6 +434,58 @@ onMounted(load)
     </template>
   </PageHeader>
 
+  <!-- 我的标的 / 标的目录 切换 -->
+  <div class="view-switch">
+    <el-radio-group v-model="catalogActive">
+      <el-radio-button :value="false">我的标的</el-radio-button>
+      <el-radio-button :value="true">标的目录（{{ catalogTotal || '…' }}）</el-radio-button>
+    </el-radio-group>
+  </div>
+
+  <!-- 标的目录模式 -->
+  <div v-if="catalogActive" class="panel">
+    <div class="catalog-bar">
+      <el-radio-group v-model="catalogType" size="small">
+        <el-radio-button v-for="t in CATALOG_TYPES" :key="t.value" :value="t.value">{{ t.label }}</el-radio-button>
+      </el-radio-group>
+      <el-input v-model="catalogSearch" placeholder="搜索名称/代码" clearable size="small" style="width: 240px" />
+    </div>
+    <StateBlock :loading="catalogLoading" :empty="!catalogRows.length" :has-data="!!catalogRows.length" empty-text="没有符合条件的标的">
+      <el-table :data="catalogRows" size="small" row-key="code">
+        <el-table-column prop="name" label="名称" min-width="180" show-overflow-tooltip>
+          <template #default="{ row }">
+            <span style="font-weight:500">{{ row.name }}</span>
+            <el-tag :type="catTagColor(row.itype)" size="small" effect="plain" style="margin-left:6px">
+              {{ catTypeLabel(row.itype) }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="代码" width="110">
+          <template #default="{ row }"><span class="mono">{{ row.code }}</span></template>
+        </el-table-column>
+        <el-table-column label="操作" width="100" align="center" fixed="right">
+          <template #default="{ row }">
+            <el-tag v-if="row.already_added" type="info" size="small">已添加</el-tag>
+            <el-button v-else type="primary" size="small" @click="addFromBrowse(row)">加入</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <div class="catalog-pager">
+        <el-pagination
+          v-model:current-page="catalogPage"
+          :page-size="50"
+          :total="catalogTotal"
+          layout="prev, pager, next, total"
+          background
+          small
+          @current-change="loadCatalog"
+        />
+      </div>
+    </StateBlock>
+  </div>
+
+  <!-- 我的标的模式（原有内容） -->
+  <template v-else>
   <!-- 品类统计条 -->
   <div v-if="rows.length" class="grid grid-4 group-stats">
     <div
@@ -437,6 +568,7 @@ onMounted(load)
       </el-table>
     </StateBlock>
   </div>
+  </template><!-- /v-else 我的标的 -->
 
   <el-dialog v-model="dialog" :title="editing ? '编辑标的' : '新增标的'" width="560px" :close-on-click-modal="false">
     <!-- 实时搜索：输入即出下拉，选中自动预填全表单（新增模式才显示） -->
@@ -510,6 +642,22 @@ onMounted(load)
 </template>
 
 <style scoped>
+.view-switch {
+  margin-bottom: 16px;
+}
+.catalog-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+.catalog-pager {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
 .smart-search-zone {
   margin-bottom: 20px;
 }

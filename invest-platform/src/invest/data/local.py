@@ -427,6 +427,20 @@ class LocalStore:
         with self._conn() as conn:
             return [int(r[0]) for r in conn.execute("SELECT DISTINCT member_id FROM trades ORDER BY member_id").fetchall()]
 
+    def browse_catalog(self, itype: str = "", page: int = 1, page_size: int = 50) -> list[tuple]:
+        """分页浏览标的目录（品类筛选）。返回 (code, name, full_name, itype)。"""
+        offset = (page - 1) * page_size
+        with self._conn() as conn:
+            if itype:
+                return conn.execute(
+                    "SELECT code, name, full_name, itype FROM instrument_catalog WHERE itype = ? ORDER BY code LIMIT ? OFFSET ?",
+                    (itype, page_size, offset),
+                ).fetchall()
+            return conn.execute(
+                "SELECT code, name, full_name, itype FROM instrument_catalog ORDER BY itype, code LIMIT ? OFFSET ?",
+                (page_size, offset),
+            ).fetchall()
+
     def search_catalog(self, query: str, limit: int = 20) -> list[tuple]:
         """指数目录 + 标的目录统一搜索：精确 > 简称包含 > 全称包含。
         返回 (code, name, full_name, itype)；itype: index|fund|etf|stock|bond。"""

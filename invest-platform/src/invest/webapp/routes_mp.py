@@ -610,17 +610,31 @@ def instruments_save(request: Request, payload: dict = Body(...), store=Depends(
 
 
 @router.get("/instruments/catalog")
-def instruments_catalog(q: str = "", store=Depends(get_store), member_id=Depends(get_member_id)) -> dict:
-    """标的搜索（instrument_catalog 基金/ETF/股票 + csi_catalog 指数）：搜到即可一键加入。"""
+def instruments_catalog(
+    q: str = "",
+    page: int = 1,
+    page_size: int = 50,
+    itype: str = "",
+    store=Depends(get_store),
+    member_id=Depends(get_member_id),
+) -> dict:
+    """标的目录（S12 搜索 + 浏览）：支持关键词搜索、品类筛选、分页浏览。"""
     q = (q or "").strip()
-    if len(q) < 2:
-        return {"results": []}
-    rows = store.search_catalog(q, limit=20)
     existing_ids = {r[0] for r in store.list_instruments(member_id)}
     from ..config import load_config
     yaml_ids = {i.id for i in load_config(None).instruments}
-    # itype → suggested_type 映射（index 作基准，不直接可交易）
+    from ..config import load_config as _lc
+    yaml_codes = {i.code for i in _lc(None).instruments if i.code}
+    my_codes = existing_ids | yaml_codes
+
     TYPE_MAP = {"fund": "open_end_fund", "etf": "etf", "stock": "stock", "bond": "bond", "index": "etf"}
+
+    if len(q) >= 2:
+        rows = store.search_catalog(q, limit=50)
+    else:
+        # 无关键词：按品类分页浏览全部目录
+        rows = store.browse_catalog(itype=itype, page=page, page_size=page_size)
+
     return {
         "results": [
             {
@@ -628,10 +642,13 @@ def instruments_catalog(q: str = "", store=Depends(get_store), member_id=Depends
                 "itype": r[3] if len(r) > 3 else "index",
                 "suggested_type": TYPE_MAP.get(r[3] if len(r) > 3 else "index", "etf"),
                 "benchmark_index": r[1] if (len(r) > 3 and r[3] == "index") else "",
-                "already_added": r[0] in existing_ids or r[0] in yaml_ids,
+                "already_added": r[0] in my_codes,
             }
             for r in rows
-        ]
+        ],
+        "total": store.catalog_count(),
+        "page": page,
+        "page_size": page_size,
     }
 
 

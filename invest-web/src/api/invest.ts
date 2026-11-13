@@ -172,9 +172,24 @@ export function parseInstrumentImage(file: File): Promise<{ text: string; instru
 
 /** S12 策略库：按品类获取模板 */
 export function getStrategyTemplates(type: string): Promise<{
-  templates: { id: string; name: string; desc: string; params: { key: string; label: string; type: string; default?: number | string; unit?: string; options?: string[]; placeholder?: string }[]; types: string[]; bound?: boolean }[]
+  templates: { id: string; name: string; desc: string; params: { key: string; label: string; type: string; default?: number | string; unit?: string; options?: string[] }[]; types: string[]; bound?: boolean }[]
 }> {
   return request({ url: '/strategies/templates', params: { type } })
+}
+
+/** 标的目录浏览（分页+品类筛选） */
+export function browseInstrumentCatalog(params: {
+  q?: string
+  page?: number
+  page_size?: number
+  itype?: string
+}): Promise<{
+  results: { code: string; name: string; full_name: string; itype: string; suggested_type: string; benchmark_index: string; already_added: boolean }[]
+  total: number
+  page: number
+  page_size: number
+}> {
+  return request({ url: '/instruments/catalog', params })
 }
 
 /** S12 策略库：评估当前建议 */

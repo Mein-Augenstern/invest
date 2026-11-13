@@ -470,6 +470,23 @@ class MySQLStore:
                 cur.execute("SELECT DISTINCT member_id FROM trades ORDER BY member_id")
                 return [int(r[0]) for r in cur.fetchall()]
 
+    def browse_catalog(self, itype: str = "", page: int = 1, page_size: int = 50) -> list[tuple]:
+        """分页浏览标的目录（品类筛选）。"""
+        offset = (page - 1) * page_size
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                if itype:
+                    cur.execute(
+                        "SELECT code, name, full_name, itype FROM instrument_catalog WHERE itype = %s ORDER BY code LIMIT %s OFFSET %s",
+                        (itype, page_size, offset),
+                    )
+                else:
+                    cur.execute(
+                        "SELECT code, name, full_name, itype FROM instrument_catalog ORDER BY itype, code LIMIT %s OFFSET %s",
+                        (page_size, offset),
+                    )
+                return [tuple(r) for r in cur.fetchall()]
+
     def search_catalog(self, query: str, limit: int = 20) -> list[tuple]:
         """标的目录 + 指数目录统一搜索。返回 (code, name, full_name, itype)。"""
         q = "%" + query + "%"
