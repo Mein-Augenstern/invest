@@ -652,6 +652,59 @@ def instruments_catalog(
     }
 
 
+@router.get("/instruments/preview")
+def instruments_preview(code: str, itype: str = "fund", store=Depends(get_store)) -> dict:
+    """标的预览：按需拉取行情/净值做迷你业绩展示（不落库，加入后才持久化）。"""
+    from ..reporting import _compute_performance
+
+    series_key = code
+    kind_map = {"fund": "fund_nav", "etf": "etf_close", "stock": "stock_close", "bond": "bond_close"}
+    kind = kind_map.get(itype, "fund_nav")
+    nav_df = store.read_series(series_key, kind)
+
+    # 本地无数据时尝试从 akshare 拉取（即席预览，不落库）
+    fetched = False
+    if nav_df.empty:
+        try:
+            import akshare as ak
+
+            if itype in ("fund", "etf"):
+                raw = ak.fund_open_fund_info_em(symbol=code, indicator="单位净值走势")
+                if raw is not None and not raw.empty:
+                    nav_df = raw.rename(columns={"净值日期": "date", "单位净值": "close"})[["date", "close"]]
+                    fetched = True
+            elif itype == "stock":
+                raw = ak.stock_zh_a_hist(symbol=code, period="daily", start_date="20240101", adjust="qfq")
+                if raw is not None and not raw.empty:
+                    nav_df = raw.rename(columns={"日期": "date", "收盘": "close"})[["date", "close"]]
+                    fetched = True
+        except Exception:
+            pass
+
+    if nav_df.empty or len(nav_df) < 2:
+        return {"has_data": False, "name": "", "code": code, "itype": itype}
+
+    # 计算业绩
+    perf = _compute_performance(nav_df)
+    from ..reporting import downsample
+
+    nav_series = downsample(nav_df)
+    latest = float(nav_df["close"].iloc[-1])
+    prev = float(nav_df["close"].iloc[-2]) if len(nav_df) >= 2 else None
+    daily_chg = round((latest - prev) / prev, 4) if prev and prev > 0 else None
+
+    return {
+        "has_data": True,
+        "fetched": fetched,
+        "code": code,
+        "itype": itype,
+        "latest": round(latest, 4),
+        "daily_chg": daily_chg,
+        "nav_series": nav_series,
+        "performance": perf,
+    }
+
+
 @router.post("/instruments/delete")
 def instruments_delete(request: Request, payload: dict = Body(...), store=Depends(get_store),
                        member_id=Depends(get_member_id)) -> dict:

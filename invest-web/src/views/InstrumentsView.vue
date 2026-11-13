@@ -15,10 +15,12 @@ import {
 import { Picture, Plus } from '@element-plus/icons-vue'
 import PageHeader from '@/components/PageHeader.vue'
 import StateBlock from '@/components/StateBlock.vue'
+import EChart from '@/components/charts/EChart.vue'
+import { SERIES_COLORS, type EChartsOption } from '@/components/charts/echarts'
 import { ApiError, errMsg } from '@/api/client'
-import { deleteInstrument, getInstruments, parseInstrumentImage, saveInstrument, searchInstrumentCatalog, browseInstrumentCatalog } from '@/api/invest'
+import { deleteInstrument, getInstruments, parseInstrumentImage, saveInstrument, searchInstrumentCatalog, browseInstrumentCatalog, previewInstrument } from '@/api/invest'
 import type { InstrumentForm, InstrumentRow } from '@/types'
-import { fmtQty } from '@/utils/format'
+import { fmtQty, fmtPct, pnlClass } from '@/utils/format'
 
 /** 品类：value 为后端 INSTRUMENT_TYPES，中文与小程序一致 */
 const TYPES = [
@@ -92,6 +94,57 @@ watch(catalogType, () => {
 watch(catalogActive, (v) => {
   if (v && !catalogRows.value.length) loadCatalog()
 })
+
+/* ---------- 标的预览（目录行点击 → 抽屉展示迷你业绩 → 再决定加入） ---------- */
+
+interface PreviewData {
+  has_data: boolean
+  fetched: boolean
+  code: string
+  itype: string
+  latest: number
+  daily_chg: number | null
+  nav_series: [number, number][]
+  performance: { returns: Record<string, number | null>; volatility: number | null; max_drawdown: number | null; sharpe: number | null; risk_level: string; trend: string }
+}
+
+const previewVisible = ref(false)
+const previewLoading = ref(false)
+const previewItem = ref<{ code: string; name: string; itype: string; suggested_type: string; benchmark_index: string; already_added: boolean } | null>(null)
+const previewData = ref<PreviewData | null>(null)
+
+const previewChartOption = computed<EChartsOption>(() => {
+  const s = previewData.value?.nav_series || []
+  if (s.length < 2) return {}
+  return {
+    grid: { left: 10, right: 16, top: 10, bottom: 10, containLabel: true },
+    tooltip: { trigger: 'axis' },
+    xAxis: { type: 'time', axisLabel: { fontSize: 10 } },
+    yAxis: { type: 'value', scale: true, axisLabel: { fontSize: 10 } },
+    series: [{ type: 'line', data: s, showSymbol: false, lineStyle: { width: 1.5, color: SERIES_COLORS[0] } }],
+  }
+})
+
+async function openPreview(item: { code: string; name: string; itype: string; suggested_type: string; benchmark_index: string; already_added: boolean }) {
+  previewItem.value = item
+  previewVisible.value = true
+  previewData.value = null
+  previewLoading.value = true
+  try {
+    previewData.value = await previewInstrument(item.code, item.itype)
+  } catch {
+    previewData.value = null
+  } finally {
+    previewLoading.value = false
+  }
+}
+
+/** 从预览加入 */
+function addFromPreview() {
+  if (!previewItem.value) return
+  previewVisible.value = false
+  addFromBrowse(previewItem.value as Record<string, unknown>)
+}
 
 /** 目录品类标签颜色/文案 */
 function catTagColor(itype: string): 'primary' | 'success' | 'danger' | 'warning' | 'info' {
@@ -451,7 +504,7 @@ onMounted(load)
       <el-input v-model="catalogSearch" placeholder="搜索名称/代码" clearable size="small" style="width: 240px" />
     </div>
     <StateBlock :loading="catalogLoading" :empty="!catalogRows.length" :has-data="!!catalogRows.length" empty-text="没有符合条件的标的">
-      <el-table :data="catalogRows" size="small" row-key="code">
+      <el-table :data="catalogRows" size="small" row-key="code" @row-click="(row: Record<string, unknown>) => openPreview(row as never)">
         <el-table-column prop="name" label="名称" min-width="180" show-overflow-tooltip>
           <template #default="{ row }">
             <span style="font-weight:500">{{ row.name }}</span>
@@ -639,9 +692,144 @@ onMounted(load)
       <el-button type="primary" :loading="saving" @click="submit">保存</el-button>
     </template>
   </el-dialog>
+
+  <!-- 标的预览抽屉 -->
+  <el-drawer v-model="previewVisible" :title="previewItem?.name || '标的预览'" size="420px" :with-header="true">
+    <template v-if="previewItem">
+      <div class="pv-header">
+        <span class="pv-name">{{ previewItem.name }}</span>
+        <el-tag :type="catTagColor(previewItem.itype)" size="small" effect="plain">{{ catTypeLabel(previewItem.itype) }}</el-tag>
+        <span class="pv-code mono muted">{{ previewItem.code }}</span>
+      </div>
+
+      <div v-if="previewLoading" class="pv-loading">
+        <el-skeleton :rows="5" animated />
+        <p class="muted pv-hint">正在拉取行情数据…</p>
+      </div>
+
+      <template v-else-if="previewData?.has_data">
+        <div class="pv-stats">
+          <div class="pv-stat">
+            <span class="muted">最新净值/价格</span>
+            <b class="num">{{ previewData.latest }}</b>
+          </div>
+          <div class="pv-stat" v-if="previewData.daily_chg !== null">
+            <span class="muted">日涨跌</span>
+            <b class="num" :class="pnlClass(previewData.daily_chg)">{{ fmtPct(previewData.daily_chg) }}</b>
+          </div>
+        </div>
+
+        <div class="pv-chart">
+          <EChart v-if="previewData.nav_series.length >= 2" :option="previewChartOption" height="200px" />
+          <el-empty v-else description="数据不足" :image-size="60" />
+        </div>
+
+        <div v-if="previewData.performance?.returns" class="pv-perf">
+          <div class="pv-perf-title">区间收益</div>
+          <div class="pv-perf-grid">
+            <div v-for="(val, key) in previewData.performance.returns" :key="key" class="pv-perf-item">
+              <span class="muted pf-label">{{ { m1: '近1月', m3: '近3月', m6: '近6月', y1: '近1年', y3: '近3年', all: '成立以来' }[key] || key }}</span>
+              <span class="num" :class="pnlClass(val)">{{ fmtPct(val) }}</span>
+            </div>
+          </div>
+          <div class="pv-risk-row" v-if="previewData.performance.volatility !== null">
+            <span class="muted">年化波动 <b class="num">{{ (previewData.performance.volatility * 100).toFixed(1) }}%</b></span>
+            <span class="muted" v-if="previewData.performance.max_drawdown !== null">最大回撤 <b class="num" :class="pnlClass(previewData.performance.max_drawdown)">{{ (previewData.performance.max_drawdown * 100).toFixed(1) }}%</b></span>
+            <el-tag v-if="previewData.performance.risk_level" size="small" type="info">{{ previewData.performance.risk_level }}</el-tag>
+          </div>
+        </div>
+      </template>
+
+      <div v-else class="pv-no-data">
+        <el-empty description="暂无行情数据（加入后拉数即可查看）" :image-size="80" />
+      </div>
+
+      <div class="pv-footer">
+        <el-button v-if="!previewItem.already_added" type="primary" size="large" style="width:100%" @click="addFromPreview">
+          加入我的标的
+        </el-button>
+        <el-tag v-else type="info" size="large" style="width:100%;text-align:center;padding:12px 0">已在我的标的中</el-tag>
+      </div>
+    </template>
+  </el-drawer>
 </template>
 
 <style scoped>
+.pv-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+.pv-name {
+  font-size: 20px;
+  font-weight: 700;
+}
+.pv-code {
+  font-size: 13px;
+}
+.pv-loading {
+  padding: 20px 0;
+}
+.pv-hint {
+  text-align: center;
+  margin-top: 12px;
+  font-size: 12px;
+}
+.pv-stats {
+  display: flex;
+  gap: 24px;
+  margin-bottom: 16px;
+}
+.pv-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.pv-stat b {
+  font-size: 20px;
+}
+.pv-chart {
+  margin-bottom: 16px;
+}
+.pv-perf-title {
+  font-weight: 600;
+  margin-bottom: 8px;
+  font-size: 14px;
+}
+.pv-perf-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.pv-perf-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 12px;
+  background: #f7f8fa;
+  border-radius: 6px;
+}
+.pv-risk-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  font-size: 13px;
+  padding-top: 10px;
+  border-top: 1px solid var(--iv-border);
+}
+.pv-no-data {
+  padding: 30px 0;
+}
+.pv-footer {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--iv-border);
+}
+.pf-label {
+  font-size: 11px;
+}
 .view-switch {
   margin-bottom: 16px;
 }

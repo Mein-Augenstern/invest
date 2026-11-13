@@ -177,6 +177,20 @@ export function getStrategyTemplates(type: string): Promise<{
   return request({ url: '/strategies/templates', params: { type } })
 }
 
+/** 标的预览（按需拉取行情做迷你业绩展示） */
+export function previewInstrument(code: string, itype: string): Promise<{
+  has_data: boolean
+  fetched: boolean
+  code: string
+  itype: string
+  latest: number
+  daily_chg: number | null
+  nav_series: [number, number][]
+  performance: { returns: Record<string, number | null>; volatility: number | null; max_drawdown: number | null; sharpe: number | null; risk_level: string; trend: string }
+}> {
+  return request({ url: '/instruments/preview', params: { code, itype }, timeoutMs: 30_000 })
+}
+
 /** 标的目录浏览（分页+品类筛选） */
 export function browseInstrumentCatalog(params: {
   q?: string
